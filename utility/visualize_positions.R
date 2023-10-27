@@ -27,8 +27,11 @@ visualize_positions <- function(data,
                                 ...){
     # If `exp` is undefined, then it should contain all of the experiments
     suppressWarnings(if(is.null(exp)){
-        exp <- unique(data[,exp_col])
+        exp <- data[,exp_col] %>% 
+            unique() %>% 
+            unlist()
     })
+    print(exp)
     
     # Use ggplot to plot the data of interest  
     data %>% 
