@@ -5,7 +5,8 @@ experiment
 */*/*/depr 
 */*/*/*/depr
 
-*/results
+results
 
 *.tar.gz
+*.zip
 *.txt
