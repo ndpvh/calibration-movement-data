@@ -1,3 +1,11 @@
+################################################################################
+# Purpose: Preprocess the calibration data that was gathered on 14/10/2023     #
+#          and 21/10/2023. These data are used to estimate the amount of       #
+#          systematic and unsystematic noise in the movement data. We          #
+#          additionally use these data to find out what the actual sampling    #
+#          rate of the data is (expected 5Hz)                                  #
+################################################################################
+
 library(tidyverse)
 library(data.table)
 
