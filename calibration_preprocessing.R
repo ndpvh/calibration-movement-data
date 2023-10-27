@@ -6,26 +6,26 @@
 #          rate of the data is (expected 5Hz)                                  #
 ################################################################################
 
-library(tidyverse)
-library(data.table)
+source(file.path("utility", "utility.R"))
 
-# Load in both the data about the experiments
-exp <- fread(file.path("Calibration experiments", "Data", "experiments.csv"),
-             data.table = FALSE) %>% 
+# Load in both the data about the experiments that were run on both days
+exp <- fread(file.path("data", "experiments.csv"),
+             data.table = FALSE) %>%
     # Select only a few columns and rename `id` so that you can later join
-    # this dataframe with the other one
-    select(id, name) %>% 
+    # this dataframe with the one that contains the measured positions
+    select(id, name, date) %>% 
     rename(experiment_id = id)
 
-# Load and preprocess the data about the positions
-pos <- fread(file.path("Calibration experiments", "Data", "datapoints.csv"),
-             data.table = FALSE) %>%
-    # Column names from NUC
+# Load and preprocess the data that contains the measured positions
+data <- fread(file.path("data", "datapoints.csv"),
+              data.table = FALSE) %>%
+    # Column names from the NUC
     setNames(c("id", "created", "modified", "tag_id", "experiment_id",
                "timestamp", "x", "y", "person_id")) %>% 
     # Join the position data with the experimental data
     plyr::join(exp, by = "experiment_id") %>% 
-    # Delete and rename columns
+    # Delete and rename columns: Only retain timestamps, tag id's, x and y 
+    # position, and the name of the experiment
     select(timestamp, tag_id, x:y, name) %>% 
     rename(tag = tag_id,
            experiment = name) %>% 
@@ -33,44 +33,47 @@ pos <- fread(file.path("Calibration experiments", "Data", "datapoints.csv"),
     filter(!(is.na(experiment))) 
 
 # Experiments that have been done are the following:
-#   - test experiment: walking around
+#   - test experiment:          walking around with no clear goal
 #   - my_experiment:
-#   - stationary 2, 3, 5, 6: laying down the tags on the net and letting them
-#                                    sit there
-#   - movement L X V: moving with X Volts across the Lth line of the Y-axis
-#                     (movement itself is along X-axis)  
-#   - movement Lperp X V: same principle, but X and Y are inversed
-#   - movement diag X V: same principle, but this time along the diagonals
+#   - stationary 2, 3, 5, 6:    laying down the tags on the ground without moving 
+#                               them any further
+#   - movement L X V:           moving with X Volts across the Lth line of the 
+#                               Y-axis (movement itself is along x-axis)  
+#   - movement Lperp X V:       same principle, but X and Y are inversed
+#   - movement diag X V:        same principle, but this time along the diagonals
+#   - headbands:                stationary data with humans wearing headbands
+#   - tablet batch experiment:  test whether sampling rate drops when using 
+#                               many tablets at once
 
-###################################################
+
+
+
+
+#-------------------------------------------------------------------------------
 # Stationary data
-###################################################
+#-------------------------------------------------------------------------------
 
-# Just visualizing the data a bit
-visualize_positions <- function(name){
-    plot_data <- pos %>% 
-        filter(experiment == name) %>% 
-        select(x, y)
-
-    plot(plot_data$x, plot_data$y)
-}
-
-visualize_positions("stationary 2")
-visualize_positions("stationary 3")
-visualize_positions("stationary 5")
-visualize_positions("stationary 6")
-
-# Lets make a sum of them all and plot these as well
-to_sum <- c("stationary 2", 
-            "stationary 3",
-            "stationary 5",
-            "stationary 6")
-stationary <- pos %>% 
+# Sum all of the stationary data to one datafile. This way, we get measurements
+# at all positions of the net that we installed, which we can then compare to 
+# the positions these measurements should actually have.
+#
+# The process below first creates a boolean that indicates whether the
+# experiments are the ones that are defined in `stationary_experiments`. Then,
+# this boolean is used to filter the data to only contain these data.
+stationary_experiments <- paste("stationary", c(2, 3, 5, 6), sep = " ")
+stationary <- data %>% 
     group_by(experiment) %>% 
     tidyr::nest() %>% 
-    mutate(stationary = experiment %in% to_sum) %>% 
+    mutate(stationary_boolean = experiment %in% stationary_experiments) %>%
     tidyr::unnest(data) %>% 
-    ungroup()
+    ungroup() %>% 
+    filter(stationary_boolean)
+
+# Visualize these data
+visualize_positions(stationary)
+
+# Lets make a sum of them all and plot these as well
+
 
 stationary %>% 
     filter(stationary) %>% 
