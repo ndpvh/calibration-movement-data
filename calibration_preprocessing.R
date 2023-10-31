@@ -85,3 +85,50 @@ visualize_positions(stationary) +
 # Save these data as being preprocessed
 saveRDS(stationary,
         file.path("data", "preprocessed_stationary_14-10-2023.Rds"))
+
+
+
+
+
+#-------------------------------------------------------------------------------
+# Stationary data: 21/10/2023
+#-------------------------------------------------------------------------------
+
+# Get the stationary data for the second calibration experiment. Here, there is 
+# less data than in the previous one, and therefore less to preprocess.
+# Importantly, this only uses the data for the tags that were put on the floor: 
+# Stationary data when tags where in headbands is filtered out.
+#
+# The process is the same as before.
+stationary <- data %>% 
+    filter(experiment == "STATIONARY 2")
+
+# Visualize these data
+visualize_positions(stationary)
+
+# Use the same ideas as before to preprocess these data and assign them positions
+# that we can assume are close to the actual positions.
+stationary <- stationary %>% 
+    mutate(X = assign_row(x, 10),
+           Y = assign_row(y, 8)) %>% 
+    select(-tag) %>% 
+    plyr::join(rectangle(c(10, 8)), 
+               by = c("X", "Y")) %>% 
+    mutate(X = X + min(x), 
+           Y = Y + min(y))
+
+# Visualize whether our approximation of the real positions is adequate.
+#
+# It seems that this time, we don't really need a correction. Unfortunately, 
+# however, there does seem to be some systematic push to the right in the 
+# x-direction due to outliers on row 3, column 1. This cannot be corrected in 
+# a standardized way, and we will leave it at that.
+visualize_positions(stationary) +
+    geom_hline(yintercept = unique(stationary$Y),
+               color = "red") +
+    geom_vline(xintercept = unique(stationary$X),
+               color = "red")
+
+# Save these data as being preprocessed
+saveRDS(stationary,
+        file.path("data", "preprocessed_stationary_21-10-2023.Rds"))
