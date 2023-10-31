@@ -8,49 +8,11 @@
 
 source(file.path("utility", "utility.R"))
 
-# Load in both the data about the experiments that were run on both days
-exp <- fread(file.path("data", "experiments.csv"),
-             data.table = FALSE) %>%
-    # Select only a few columns and rename `id` so that you can later join
-    # this dataframe with the one that contains the measured positions
-    select(id, name, date) %>% 
-    rename(experiment_id = id)
-
-# Load and preprocess the data that contains the measured positions
-data <- fread(file.path("data", "datapoints.csv"),
-              data.table = FALSE) %>%
-    # Column names from the NUC
-    setNames(c("id", "created", "modified", "tag_id", "experiment_id",
-               "timestamp", "x", "y", "person_id")) %>% 
-    # Join the position data with the experimental data
-    plyr::join(exp, by = "experiment_id") %>% 
-    # Delete and rename columns: Only retain timestamps, tag id's, x and y 
-    # position, and the name of the experiment
-    select(timestamp, tag_id, x:y, name) %>% 
-    rename(tag = tag_id,
-           experiment = name) %>% 
-    # Delete data in which no experiment was running
-    filter(!(is.na(experiment))) 
-
-# Experiments that have been done are the following:
-#   - test experiment:          walking around with no clear goal
-#   - my_experiment:
-#   - stationary 2, 3, 5, 6:    laying down the tags on the ground without moving 
-#                               them any further
-#   - movement L X V:           moving with X Volts across the Lth line of the 
-#                               Y-axis (movement itself is along x-axis)  
-#   - movement Lperp X V:       same principle, but X and Y are inversed
-#   - movement diag X V:        same principle, but this time along the diagonals
-#   - headbands:                stationary data with humans wearing headbands
-#   - tablet batch experiment:  test whether sampling rate drops when using 
-#                               many tablets at once
-
-
-
-
+# Load the data of interest
+data <- load_data()
 
 #-------------------------------------------------------------------------------
-# Stationary data
+# Stationary data: 14/10/2023
 #-------------------------------------------------------------------------------
 
 # Sum all of the stationary data to one datafile. This way, we get measurements
@@ -67,98 +29,59 @@ stationary <- data %>%
     mutate(stationary_boolean = experiment %in% stationary_experiments) %>%
     tidyr::unnest(data) %>% 
     ungroup() %>% 
-    filter(stationary_boolean)
+    filter(stationary_boolean) %>% 
+    select(-stationary_boolean)
 
 # Visualize these data
 visualize_positions(stationary)
 
-# Lets make a sum of them all and plot these as well
-
-
-stationary %>% 
-    filter(stationary) %>% 
-    ggplot(aes(x = x, y = y)) + 
-        geom_point()
-
-########################
-# Preparing the data
-
-# Create a function that will create a dotted rectangle of a given length and 
-# width. Importantly, both should be natural numbers, as there is one meter 
-# apart between each dot
-create_rectangle <- function(w, h){
-    w <- w + 1 ; h <- h + 1
-    cbind(X = rep((1:w) - 1, each = h),
-          Y = rep((1:h) - 1, times = w)) %>% 
-        as_tibble() %>% 
-        mutate(tag = row_number()) %>% 
-        return()
-}
-
-# Create a function that will classify the measurements into several discrete
-# groups, based on their continuous value.
-# Assumptions are that each of the tags are enough apart so that the measurement 
-# error is not severe enough to not measure their locations accurately
-classify_dimension <- function(x, numcat){
+# Create a function that will assign a measured row number that corresponds to 
+# the row numbers given in the `rectangle` function. It simply works by standardizing 
+# the measured positions, multiplying it by the number of rows in that specific
+# direction (x or y), and then rounding of the value.
+assign_row <- function(x, n_rows){
     (x - min(x)) %>% 
         `/` (max(x) - min(x)) %>%
-        `*` (numcat) %>% 
+        `*` (n_rows) %>% 
         round() %>% 
         return()
 }
 
-# Delete the original tags and replace them with the ones created by the grid
-# Furthermore assign the "real" grid coordinates to each of the tags as to be 
-# able to estimate the bias and variation of the measurement
+# Use the `assign_row` function to determine in which row each measured position 
+# `x` and `y` are located. Then remove the pre-assigned tag numbers and replace 
+# them with tag numbers that are created by the `rectangle` function. To make 
+# the measured positions `x` and `y` similar to the supposed real positions 
+# `X` and `Y`, we add the minimal values of `x` and `y` to `X` and `Y` resp.
+#
+# The reason why tag numbers should be replaced is because there are less tags
+# (60) than measured positions (90). We later want to group by tags, and using 
+# their original labels would then lead us into trouble.
 stationary <- stationary %>% 
-    # Only get data from the stationary measurements and delete tags
-    filter(stationary) %>% 
+    mutate(X = assign_row(x, 10),
+           Y = assign_row(y, 8)) %>% 
     select(-tag) %>% 
-    # Correct the measurements to begin at the origin for the best of your
-    # abilities
-    mutate(x = x,
-           y = y) %>%
-    # Assign each of the measurements to discrete categories as defined in 
-    # classify_dimension
-    mutate(X = classify_dimension(x, 10),
-           Y = classify_dimension(y, 8))
-
-# Quick test of whether this works: Apparently it does! (Change X to Y for the 
-# other dimension)
-ggplot(data = stationary, aes(x = x, y = y, color = factor(X))) +
-    geom_point()
-
-# Join the stationary dataframe with a rectangle that is created with the same 
-# specifications
-stationary <- stationary %>% 
-    plyr::join(create_rectangle(10, 8), 
-               by = c("X", "Y"))
-
-# Finally, correct the "real positions" by adding the minimum of x and y to it.
-# While this is not going to be a perfect fit, it does give us a close approximation
-# to the actual positions of X and Y, which were not measured in our first 
-# calibration experiment.
-stationary <- stationary %>% 
-    mutate(X = X + min(x),
+    plyr::join(rectangle(c(10, 8)), 
+               by = c("X", "Y")) %>% 
+    mutate(X = X + min(x), 
            Y = Y + min(y))
 
-# Check whether it worked with some plots. It actually seems to work, and the
-# relationship is quite okay
-ggplot(data = stationary, aes(x = x, y = X)) +
-    geom_point() +
-    geom_smooth()
-ggplot(data = stationary, aes(x = y, y = Y)) +
-    geom_point() +
-    geom_smooth()
+# Given the visualization below, an extra correction is needed. More specifically,
+# we find that the measured size of the y-direction is smaller than the
+# actual size, falling somewhat short of 8 meters. To allow us to correct for
+# this, we should try to center the measured space into the actual space, which
+# is what we do in the following bit of code.
+#
+# Importantly, no such correction seems to be needed in the x-direction.
+stationary <- stationary %>% 
+    mutate(Y = Y - abs(max(Y) - max(y))/2)
 
-# Also visualize the relationship between x and y to make sure there are no
-# interactions happening: Otherwise 2D estimation
-ggplot(data = stationary, aes(x = x, y = y)) +
-    geom_point() + 
-    geom_smooth()
+# Visualize whether our approximation of the real positions is adequate
+visualize_positions(stationary) +
+    geom_hline(yintercept = unique(stationary$Y),
+               color = "red") +
+    geom_vline(xintercept = unique(stationary$X),
+               color = "red")
 
 # Save these data as being preprocessed
 saveRDS(stationary,
-        file.path("Calibration experiments", 
-                  "Data", 
-                  "preprocessed_stationary.Rds"))
+        file.path("data", "preprocessed_stationary_14-10-2023.Rds"))
