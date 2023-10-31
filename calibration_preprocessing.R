@@ -24,13 +24,7 @@ data <- load_data()
 # this boolean is used to filter the data to only contain these data.
 stationary_experiments <- paste("stationary", c(2, 3, 5, 6), sep = " ")
 stationary <- data %>% 
-    group_by(experiment) %>% 
-    tidyr::nest() %>% 
-    mutate(stationary_boolean = experiment %in% stationary_experiments) %>%
-    tidyr::unnest(data) %>% 
-    ungroup() %>% 
-    filter(stationary_boolean) %>% 
-    select(-stationary_boolean)
+    filter(experiment %in% stationary_experiments)
 
 # Visualize these data
 visualize_positions(stationary)
