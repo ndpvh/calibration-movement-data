@@ -210,6 +210,8 @@ for(i in seq_along(stationary)){
 # Sampling rate
 #-------------------------------------------------------------------------------
 
+# Here, we estimate the attained sampling rate for our stationary data.
+
 # Create a function that will take in the duration, order them according to 
 # size, and then compute the mean difference between each of the durations
 sampling_rate <- function(x){
@@ -280,53 +282,47 @@ for(i in seq_along(stationary)){
 
 
 
-################################################################################
+#-------------------------------------------------------------------------------
+# Systematic distortions
+#-------------------------------------------------------------------------------
 
-######################################
-# Task 3: Defining a function to correct for systematic noise
-
-# Some assumptions:
+# Here, we estimate a function to filter out systematic distortions in the data. 
+# We do this by estimating a polynomial on the stationary data and checking
+# the differences between the functions estimated on both days. We have two 
+# major assumption in this analysis, which is: 
 #   - The actual measured position is equal to the average of all measured 
 #     positions for a given tag
+#   - The systematic error in the x- and y-dimensions is independent
 
-########################
-# Estimation: 1D
 
-stationary <- readRDS(file.path("Calibration experiments", 
-                                "Data", 
-                                "preprocessed_stationary.Rds"))
+# Create a function that will output a formula for a polynomial of the degree^th
+# degree with `dependent` as dependent variable and `independent` as the 
+# independent variable.
+polynomial_formula <- function(independent, dependent, degree){
+    # Start with putting the dependent variable against the independent variable
+    polyn <- paste(dependent, "~", independent)
 
-# Create a function that will output a formula for a polynomial of the pwr^th
-# degree with y as dependent variable and x as the independent variable
-polynomial_formula <- function(x, y, pwr){
-    polyn <- paste(y, "~", x)
-    for(i in 2:pwr){
+    # Add each term of the polynomial to this string. Should be of the format 
+    # I(x^degree)
+    for(i in 2:degree){
         polyn <- paste(polyn, "+", "I(",
-                       paste0(x, "^", i), ")")
+                       paste0(independent, "^", i), ")")
     }
+
+    # Return this string as a formula to be used in `lm`
     polyn %>% 
         formula() %>% 
         return()
 }
 
-# Estimate the 10th degree polynomial on the data and find out what the characteristic
-# function of the measurements are
-result_x <- lm(polynomial_formula("x", "X", 10),
-               data = stationary) %>% 
-    summary()
-result_y <- lm(polynomial_formula("y", "Y", 10),
-               data = stationary) %>% 
-    summary()
-
-# Save these results for later
-saveRDS(result_x,
-        file.path("Calibration experiments", 
-                  "Results",
-                  "polynomial_for_x.Rds"))
-saveRDS(result_y,
-        file.path("Calibration experiments", 
-                  "Results",
-                  "polynomial_for_y.Rds"))
+# Create a formula that will do the actual estimation, based on data, a dependent 
+# variable, an independent variable, and a degree
+fit_polynomial <- function(data, independent, dependent, degree){
+    polynomial_formula(independent, dependent, 10) %>% 
+        lm(data = data) %>% 
+        summary() %>% 
+        return()
+}
 
 # Create a function that will extract all of the coefficients
 extract_coefficients <- function(x){
@@ -335,190 +331,100 @@ extract_coefficients <- function(x){
         return()
 }
 
-# Create a function that will correct the measurements that it
-# receives
-correct_measurements <- function(x, parameters){
-    X <- matrix(0, nrow = length(x), ncol = length(parameters))
-    for(i in seq_along(parameters)){
-        X[,i] <- parameters[i] * x^(i - 1)
+# As one can predict already: Loop over all stationary data again.
+for(i in seq_along(stationary)){
+    # Load the data for a given date and standardize all data: Measured positions
+    # and supposed real positions. Standardization is performed to make the
+    # function scalable to other data in which the absolute positions are not 
+    # the same as these of the calibration phase.
+    data <- load_stationary(stationary[i]) %>% 
+        mutate(standardized_x = (x - mean(x))/sd(x), 
+               standardized_y = (y - mean(y))/sd(y), 
+               standardized_X = (X - mean(X))/sd(X), 
+               standardized_Y = (Y - mean(Y))/sd(Y))
+
+    # Estimate the 10th degree polynomial on the standardized data
+    pars <- list("x" = fit_polynomial(data, 
+                                      "standardized_x", 
+                                      "standardized_X", 
+                                      10),
+                 "y" = fit_polynomial(data, 
+                                      "standardized_y", 
+                                      "standardized_Y", 
+                                      10))
+
+    # Save these results
+    save_result(pars, 
+                "polynomial", 
+                stationary[i])
+                 
+    # Create a dataframe to be used in `correct_distortion` which will 
+    # contain all of the parameters for the separate dimensions
+    result <- cbind("x" = extract_coefficients(pars[["x"]]), 
+          "y" = extract_coefficients(pars[["y"]])) %>% 
+        as.data.frame()
+
+    # Save these parameters as well 
+    save_result(result, 
+                "parameters_polynomial", 
+                stationary[i])
+
+    # Check how well this polynomial is able to correct for the distortion 
+    # in the data.
+    coordinates <- data %>% 
+        ungroup() %>% 
+        select(standardized_x, standardized_y) %>% 
+        correct_distortion(result)
+
+    # Create a plot of the locations for the distorted and the corrected data.
+    #
+    # First, create a function for this
+    location_plot <- function(data, x, y, title){
+        # Create plot data with the string column names `x` and `y`
+        plot_data <- data[, c(x, y)] %>% 
+            as.data.frame() %>% 
+            setNames(c("X", "Y"))
+
+        # Create the plot itself
+        plt <- ggplot(plot_data, 
+                      aes(x = X, y = Y)) +
+            geom_point(size = 2, 
+                       color = "black") +
+            labs(x = "Standardized X", 
+                 y = "Standardized Y", 
+                 title = title)
+
+        return(plt)
     }
-    X %>% 
-        rowSums() %>% 
-        as.numeric() %>% 
-        return()
-}
-
-# Do the actual correction in the x and y dimensions separately
-new_x <- correct_measurements(stationary$mu_x, 
-                              extract_coefficients(result_x))
-new_y <- correct_measurements(stationary$mu_y, 
-                              extract_coefficients(result_y))
-
-# Plot the new coordinates
-plot(new_x, new_y)
-plot(stationary$mu_x, stationary$mu_y)
-plot(stationary$X, stationary$Y)
-
-########################
-# Estimation: 1D with Z-scores
-
-# Create a function that will output a formula for a polynomial of the pwr^th
-# degree with y as dependent variable and x as the independent variable
-polynomial_formula <- function(x, y, pwr){
-    polyn <- paste(y, "~", x)
-    for(i in 2:pwr){
-        polyn <- paste(polyn, "+", "I(",
-                       paste0(x, "^", i), ")")
-    }
-    polyn %>% 
-        formula() %>% 
-        return()
-}
-
-# Create Z-scores
-stationary <- stationary %>% 
-    mutate(Z_x = scale(mu_x), 
-           Z_y = scale(mu_y), 
-           Z_X = scale(X), 
-           Z_Y = scale(Y))
-
-# Estimate the 10th degree polynomial on the data and find out what the characteristic
-# function of the measurements are
-result_x <- lm(polynomial_formula("Z_x", "Z_X", 10),
-               data = stationary) %>% 
-    summary()
-result_y <- lm(polynomial_formula("Z_y", "Z_Y", 10),
-               data = stationary) %>% 
-    summary()
-
-# Save these results for later
-saveRDS(result_x,
-        file.path("Calibration experiments", 
-                  "Results",
-                  "polynomial_for_x.Rds"))
-saveRDS(result_y,
-        file.path("Calibration experiments", 
-                  "Results",
-                  "polynomial_for_y.Rds"))
-
-# Create a function that will extract all of the coefficients
-extract_coefficients <- function(x){
-    x$coefficients[,1] %>% 
-        as.numeric() %>% 
-        return()
-}
-
-# Create a function that will correct the measurements that it
-# receives
-correct_measurements <- function(x, parameters){
-    X <- matrix(0, nrow = length(x), ncol = length(parameters))
-    for(i in seq_along(parameters)){
-        X[,i] <- parameters[i] * x^(i - 1)
-    }
-    X %>% 
-        rowSums() %>% 
-        as.numeric() %>% 
-        return()
-}
-
-# Do the actual correction in the x and y dimensions separately
-new_x <- correct_measurements(stationary$Z_x, 
-                              extract_coefficients(result_x))
-new_y <- correct_measurements(stationary$Z_y, 
-                              extract_coefficients(result_y))
-
-# Plot the new coordinates
-plot(new_x, new_y)
-plot(stationary$Z_x, stationary$Z_y)
-plot(stationary$Z_X, stationary$Z_Y)
-
-########################
-# Estimation: 2D
-
-degree <- 2
-
-# Create a function that will create the data matrix
-data_matrix <- function(x, y, pwr, print_formula = FALSE){
-    X <- matrix(0, nrow = length(x), ncol = (pwr + 1)^2)
-    f <- 1
-    form <- ""
-    for(i in 0:pwr){
-        for(j in 0:pwr){
-            # If the total exponents in the formula exceeds the order of the 
-            # polynomial, then you have to skip this one
-            if(i + j > pwr){
-                next
-            }
-
-            # Add the interaction term of x and y to the polynomial
-            X[,f] <- x^i * y^j
-            f <- f + 1
-
-            # Add the function to the string of the formula
-            form <- paste0(form, 
-                           ifelse(i + j == 0, "", " + "),
-                           "x^", i, " y^", j)
-        }
-    }
-    # Delete the columns in which there are only 0's
-    X <- X[,1:(f - 1)]
-
-    # Print formula if requested
-    if(print_formula){
-        print(form)
-    }
-    return(X)
-}
-
-fit_polynomial <- function(x, y, pwr){
-    # Unlist x and y
-    x <- as.matrix(x)
-    y <- as.matrix(y)
-
-    # Create the data matrix based on x and y
-    xy <- data_matrix(x[,1], x[,2], pwr)
-
-    # Get beta through the formula of the least-squares method
-    beta <- solve( t(xy) %*% xy ) %*% t(xy) %*% y
     
-    return(beta)
+    # Create and bind the plots of the distorted and corrected data
+    plt <- ggarrange(location_plot(data, 
+                                   "standardized_x", 
+                                   "standardized_y", 
+                                   "Original"), 
+                     location_plot(coordinates, 
+                                   "standardized_x", 
+                                   "standardized_y", 
+                                   "Corrected"),
+                     nrow = 1)
+
+    # Save this plot 
+    ggsave(file.path("figures", "calibration_stationary", 
+                     paste0("correct_distortion_", stationary[i], ".png")), 
+           plot = plt, 
+           units = "px", 
+           width = 2000, 
+           height = 1200)
 }
 
-# Fit the measured coordinates to the real coordinates with a 4th degree 
-# polynomial (after 5 becomes singular)
-result <- fit_polynomial(stationary[,c("mu_x", "mu_y")], 
-                         stationary[,c("X", "Y")], 
-                         degree)
-
-# Save these results for later
-saveRDS(result,
-        file.path("Calibration experiments", 
-                  "Results",
-                  "polynomial_for_2D.Rds"))
-
-# Create a function that will correct the measurements that it
-# receives
-correct_measurements <- function(x, parameters, pwr){
-    # Unlist x: Otherwise error in data_matrix
-    x <- as.matrix(x)
-
-    # Create the data matrix based on x and y. Unfortunately, difficult to extract
-    # the order of the polynomial from only its parameters, which is why it has
-    # to be provided as an argument
-    XY <- data_matrix(x[,1], x[,2], pwr)
-
-    # Do the actual conversion of the measured positions to the newly estimated
-    # ones
-    ( XY %*% parameters ) %>% 
-        return()
-}
-
-# Do the actual correction in the x and y dimensions separately
-new_xy <- correct_measurements(stationary[,c("mu_x", "mu_y")], 
-                               result,
-                               degree)
-
-# Plot the new coordinates
-plot(new_xy[,1], new_xy[,2])
-plot(stationary$mu_x, stationary$mu_y)
-plot(stationary$X, stationary$Y)
+# Interpretation of the results: 
+#   - For both datasets, the distortions seems to disappear somewhat
+#   - However, they do still show some distortion of the distances between each 
+#     of the measured tags
+#   - Question: is this a problem in our measurements, or a problem in where we 
+#     put the tags (i.e., is our assumption of the supposed coordinates X and Y 
+#     correct, or did we make a human error here)
+#   - Parameters between the two datasets are similar, though do not match 
+#     exactly. Given that their are more measured positions in the data from 
+#     the 14th of October, we will assume these estimates have a higher power, 
+#     and will use those for the correction of our distortion.
