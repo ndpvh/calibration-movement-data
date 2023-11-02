@@ -162,7 +162,7 @@ for(i in seq_along(stationary)){
 
         (ggplot(plot_data, aes(x = X)) +
             geom_histogram(col = "black", 
-                        fill = "cornflowerblue")) %>% 
+                           fill = "cornflowerblue")) %>% 
             return()
     }
 
@@ -206,44 +206,13 @@ for(i in seq_along(stationary)){
 
 
 
-################################################################################
-
-######################################
-# Task 2: Checking the drop-out rate
-
-# Small utility function to extract a piece of a string and convert it to 
-# numeric
-subnumeric <- function(x, first, last){
-    substring(x, first, last) %>% 
-        as.numeric() %>% 
-        return()
-}
-
-# Convert the timestamps of the data into an integer that indicates the number 
-# of milliseconds that have passed since the beginning. This is done separately 
-# for each of the different tags, as drop-out should also be assessed for each
-# one separately.
-convert_to_millisecond <- function(x){
-    # Only get hours, minutes, seconds, and milliseconds
-    times <- x %>% 
-        as.POSIXlt(format = "%H:%M:%OS") %>% 
-        format("%H:%M:%OS3")
-
-    # Unfortunately, need a dirty hack to be able to work with this further.
-    # Assume this format and define hours, minutes, seconds, and milliseconds.
-    times %>% 
-        (function(x){
-            return(3600000 * subnumeric(x, 1, 2) +
-                   60000 * subnumeric(x, 4, 5) +
-                   1000 * subnumeric(x, 7, 8) +
-                   subnumeric(x, 10, 11))
-        }) %>% 
-        return()
-}
+#-------------------------------------------------------------------------------
+# Sampling rate
+#-------------------------------------------------------------------------------
 
 # Create a function that will take in the duration, order them according to 
 # size, and then compute the mean difference between each of the durations
-difference_sampling_times <- function(x){
+sampling_rate <- function(x){
     x %>% 
         as.numeric() %>% 
         sort() %>% 
@@ -252,29 +221,60 @@ difference_sampling_times <- function(x){
         return()
 }
 
-# Do this conversion for each of the tags and create a duration column that 
-# starts out at 0
-stationary <- stationary %>% 
-    mutate(duration = convert_to_millisecond(timestamp)) %>% 
-    group_by(tag) %>% 
-    mutate(duration = duration - min(duration)) %>% 
-    ungroup()
+# Again loop over each of the stationary datasets
+for(i in seq_along(stationary)){
+    # Load the stationary data for a given date and convert the timestamps to 
+    # milliseconds
+    data <- load_stationary(stationary[i]) %>% 
+        mutate(duration = convert_to_millisecond(timestamp))
 
-# Get the mean difference in the sampled duration between the tags
-result <- stationary %>% 
-    group_by(tag) %>% 
-    mutate(mean_time_between_samples = difference_sampling_times(duration)) %>% 
-    ungroup() %>% 
-    group_by(tag, mean_time_between_samples) %>% 
-    tidyr::nest() %>% 
-    select(-data)
+    # Compute the mean sampling rate for each tag separately and make the 
+    # dataframe somewhat easier to interpret
+    result <- data %>% 
+        # Get the sampling rate in msec
+        group_by(tag) %>% 
+        mutate(msec = sampling_rate(duration)) %>% 
+        ungroup() %>% 
+        # Convert the sampling rate to Hz: 1 / s -> 1000 / msec
+        mutate(Hz = 1000 / msec) %>% 
+        # Only retain those variables that you want to interpret
+        group_by(tag, msec, Hz) %>% 
+        tidyr::nest() %>% 
+        select(-data)
 
-# Save these results for future reference
-saveRDS(result,
-        file.path("Calibration experiments", "Results", "sampling_rate.Rds"))
+    # Save this result
+    save_result(result, 
+                "sampling_rate", 
+                stationary[i])
 
-# And get the mean sampling rate across all tags
-mean(result$mean_time_between_samples)
+    # Make another histogram to visualize the result across tags 
+    plt <- ggplot(result, 
+                  aes(x = Hz)) +
+        geom_histogram(color = "black", 
+                       fill = "cornflowerblue") +
+        labs(title = "Sampling rate per tag", 
+             x = "Hz") +
+        geom_vline(xintercept = 5, 
+                   color = "red")
+
+    ggsave(file.path("figures", "calibration_stationary",
+                     paste0("sampling_rate_", stationary[i], ".png")),
+           plot = plt, 
+           units = "px", 
+           width = 1000, 
+           height = 1100)
+}
+
+# Interpretation of the result:
+#   - On the 14th of October, sampling rates varied substantially between 2 and 
+#     4Hz instead of the expected 5Hz. Sampling rates should thus be increased 
+#     for our future experiments.
+#   - On the 21st of October, we found a higher than expected sampling rate. This 
+#     might suggest that our initial attempts of changing the sampling rate from 
+#     5Hz to 8Hz on that day might have been successful, leading to an observed 
+#     sampling rate of 6-7Hz 
+#   - Some tags seem to perform worse and only send out responses every once in 
+#     a while.
 
 
 
