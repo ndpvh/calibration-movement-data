@@ -2,6 +2,7 @@
 library(tidyverse)
 library(data.table)
 library(ggpubr)
+library(modeest)
 
 # Get all filenames within the "utility" directory, except, of course, 
 # utility.R itself
