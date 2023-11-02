@@ -148,7 +148,7 @@ for(i in seq_along(stationary)){
 
     # Save these results
     save_result(result, 
-                "error_covariance_", 
+                "error_covariance", 
                 stationary[i])
 
     # Create histograms of the bootstrapped samples for the covariances and 
@@ -193,7 +193,14 @@ for(i in seq_along(stationary)){
 }
 
 # Interpretation of the results: 
-#   
+#   - Covariances between x and y are as good as 0, so not relationship in the 
+#     error between both dimensions
+#   - Variances are twice as high for the second calibration period, which might 
+#     suggest that there is more error on the sides than in the center 
+#     (in calibration period 2, only 3 tags were put in the center)
+#   - Worst case scenario -- which is calibration period 2, upper bound of the
+#     99%CI -- there is about 2.25cm of standard error in the x-direction, and
+#     1.80cm of standard error in the y-direction 
 
 
 
