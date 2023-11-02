@@ -1,230 +1,56 @@
-library(tidyverse)
-library(data.table)
-library(nloptr)
-library(mvtnorm)
-library(modeest)
-
-# Let's try this again, but this time in another way. 
-#
-# More specifically, I'll try to fix my previous issues in the following way:
-#   - First, estimate a global measure of error variance across all tags
-#   - Then, filter the positions so that you have a fixed measured position for 
-#     each tag
-#   - Finally, estimate a function between the measured positions and the actual
-#     positions
-
-# Read in the data
-stationary <- readRDS(file.path("Calibration experiments", 
-                                "Data",
-                                "preprocessed_stationary.Rds")) %>% 
-    ungroup()
-
-
-# Check again whether the measured positions accurately correspond to a given tag
-ggplot(data = stationary, 
-       aes(x = x, y = y, color = factor(tag))) +
-    geom_point()
-
-
-
-
-
+################################################################################
+# Purpose: Analyze the preprocessed stationary data gathered on 14/10/2023     #
+#          and 21/10/2023. The main goal of this analysis is to inform us on   #
+#          ways to deal with systematic and unsystematic noise in our data.    #
+#          Consequently, the results from this analysis were used to create    #
+#          the `filter_measurements` function in the "utility" folder.         #
 ################################################################################
 
-######################################
-# Task 1: Estimating the error variance
+source(file.path("utility", "utility.R"))
 
-# Pretreat the data to include the mean positions for each of the tags into the 
-# data itself as well. The error variance will be computed relative to this mean,
-# and thus comes with its undeniable assumptions.
-#
-# Alternatives can be the mode or median, but needs to be investigated 
-# somewhat more. These values are, however, also included in this dataframe.
-stationary <- stationary %>% 
-    group_by(tag) %>% 
-    mutate(mu_x = mean(x),
-           mu_y = mean(y),
-           median_x = median(x), 
-           median_y = median(y), 
-           mode_x = mean(mlv(x, method = "mfv")), 
-           mode_y = mean(mlv(y, method = "mfv"))) %>% 
-    ungroup() %>% 
-    mutate(corrected_x = x - mu_x, 
-           corrected_y = y - mu_y)
+# Get the dates of both stationary dataframes, which will be used both for 
+# reading in the data and for saving the results of these data.
+stationary <- c("14-10-2023",
+                "21-10-2023")
 
-# Check how far off the means are versus the medians and modes. This might 
-# give an indication of how justified we are in using the mean instead of the
-# other measures
-#
-# Change x in the ggplot `aes` argument as you please
-#
-# As a small summary: 
-#   - mu_x - median_x: Seems like the mean is slightly bigger than the median 
-#                      overall. The difference is, however, very small (most
-#                      contained within [-0.001, 0.001], or within 2mm)
-#   - mu_y - median_y: This shows the same pattern, but has some outliers that
-#                      are quite big (around 0.01, or about 1cm)
-#   - mu_x - mode_x: Aside from some outliers, the distribution is quite 
-#                    symmetrical. However, the deviation is much bigger 
-#                    ([-0.01, 0.01], or within 2cm)
-#   - mu_y - mode_y: Same pattern as for x.
-stationary %>% 
-    mutate(diff_x = mu_x - median_x, 
-           diff_y = mu_y - median_y) %>% 
-    select(diff_x, diff_y) %>% 
-    ggplot(aes(x = diff_y)) +
-        geom_histogram(fill = "cornflowerblue", 
-                       color = "black", 
-                       bins = 20) +
-        geom_vline(xintercept = 0, 
-                   color = "red",
-                   linewidth = 2)
+#-------------------------------------------------------------------------------
+# Some utilities
+#-------------------------------------------------------------------------------
 
-stationary %>% 
-    mutate(diff_x = mu_x - mode_x, 
-           diff_y = mu_y - mode_y) %>% 
-    select(diff_x, diff_y) %>% 
-    ggplot(aes(x = diff_y)) +
-        geom_histogram(fill = "cornflowerblue", 
-                       color = "black", 
-                       bins = 20) +
-        geom_vline(xintercept = 0, 
-                   color = "red",
-                   linewidth = 2)
-
-# First attempt: Parametric ######################
-
-# Some assumptions:
-#   - The actual measured position is equal to the average of all measured 
-#     positions for a given tag
-#   - The error variance is equal for each of the tags
-#   - This error is normally distributed
-#   - Independence of the error between the X and Y dimensions
-#   - Independence of error over time
-
-# Create a function that will compute and evaluate the min-log-likelihood
-min_log_likelihood <- function(x, mu, sigma){
-    # Transpose: `ldmvnorm` assumes that you have one observation in each column
-    x <- as.matrix(x) %>% 
-        t()
-    mu <- as.matrix(mu) %>% 
-        t()
-
-    # Transform `sigma` to a `lpMatrix`, as the function `ldmvnorm` requires
-    sigma <- ltMatrices(sigma[c(1:2,4)], diag = TRUE)
-
-    # Do the usual: `ldmvnorm` computes the log-likelihood of the given 
-    # observations `x` under the means `mu` and Cholesky triangular matrix
-    # `sigma`. Under the assumption of independence of the two dimensions
-    # (i.e., when the off-diagonal elements in `sigma` are 0), the Cholesky
-    # is simply a diagonal matrix with standard deviations as its diagonal 
-    # elements
-    mvtnorm::ldmvnorm(x, mean = mu, chol = sigma) %>%
-        sum() %>% 
-        `*` (-1) %>% 
+# Function that will read in a given stationary dataset. Here, `x` is one of the 
+# two dates contained within the `stationary` vector.
+load_stationary <- function(x){
+    readRDS(file.path("data", 
+                      paste0("preprocessed_stationary_", x, ".Rds"))) %>% 
         return()
 }
 
-# Create a function that will be minimized in which the variances will be 
-# estimated
-decomposition_of_variance <- function(x, mu_columns = c("mu_x", "mu_y")){
-    # Get the overall standard deviation `sigma`, which will be the measure of 
-    # error around the measurements
-    sigma <- c(x[1], 0, 0, x[1]) %>% 
-        matrix(ncol = 2)
-
-    # Define the min-log-likelihood variable
-    MLL <- 0
-    
-    # Evaluate the min-log-likelihood of the measured positions given the 
-    # estimated positions
-    min_log_likelihood(stationary[,c("x", "y")],
-                       stationary[, mu_columns],
-                       sigma) %>% 
-        return()
+# Function that will save the results for a given stationary dataset. Here, `x` 
+# is again one of the dates contained within `stationary`. `name` is the name 
+# you want to give this specific result. Finally, `result` is the thing you want 
+# to save under that name.
+save_result <- function(result, name, x){
+    saveRDS(result, 
+            file.path("results", 
+                      paste0(name, "_", x, ".Rds")))
 }
 
-# Run the estimation using nloptr
-n_tags <- stationary$tag %>% 
-    unique() %>% 
-    length()
-set.seed(35356) # New Storm for Older Lovers - La Dispute
-result <- nloptr(x0 = 1,
-                 eval_f = function(x) decomposition_of_variance(x),
-                 lb = 10^(-15),
-                 ub = 1000,
-                 opts = list("algorithm" = "NLOPT_LN_BOBYQA", 
-                             "ftol_rel" = 10^(-15),
-                             "xtol_rel" = 10^(-15),
-                             "maxeval" = 10^4))
 
-# Save the results of this estimation
-saveRDS(result,
-        file.path("Calibration experiments", "Results", "estimate_error_parametric.Rds"))
 
-# Using this result, check how many bins you would need for each dimension to 
-# be fairly certain that the position is within this bin.
+
+
+#-------------------------------------------------------------------------------
+# Estimating the error variance
+#-------------------------------------------------------------------------------
+
+# Here, we estimate the error covariances of the tags in the stationary data. 
 # 
-# If we would bin within the 5 cm, we would be fairly certain the real 
-# position would be within this specified bin
-binsize = 2 * 1.96 * result$solution
-
-# Time to test some assumptions.
-#
-# Let's start with normality.
-#
-# Hump all data of the tags together by mean-correcting them. Then do several 
-# tests:
-#   - Visual test: Make a histogram and look at the distribution
-#   - Visual test: Make a QQ plot and look at its result
-#   - Formal test: Shapiro Wilk test
-stationary <- stationary %>% 
-    mutate(corrected_x = x - mu_x, 
-           corrected_y = y - mu_y)
-
-# Let make the histogram: Look quite normal
-stationary %>% 
-    ggplot(aes(x = corrected_x)) + geom_histogram()
-stationary %>% 
-    ggplot(aes(x = corrected_y)) + geom_histogram()
-
-# And the QQ-plot: Is quite okay, except at the edges, where it shows large 
-# deviations. This is true for both x and y
-#
-# Solution, use a t-distribution instead? Stays the case apparently.
-qqnorm(stationary$corrected_x)
-qqline(stationary$corrected_x)
-
-qqnorm(stationary$corrected_y)
-qqline(stationary$corrected_y)
-
-car::qqPlot(stationary$corrected_x, distribution = "t", df = length(stationary$x) - 1)
-car::qqPlot(stationary$corrected_y, distribution = "t", df = length(stationary$y) - 1)
-
-# And finally, the Shapiro-Wilk test of normality
-nortest::ad.test(stationary$corrected_x)
-nortest::ad.test(stationary$corrected_y)
-
-ks.test(jitter(stationary$corrected_x), "pnorm")
-ks.test(jitter(stationary$corrected_y), "pnorm")
-
-# Now, let's test whether x and y are indeed independent.
-#
-# This can be done by just computing the correlation between both measured 
-# dimensions.
-#
-# They are significantly correlated
-cor.test(stationary$x, stationary$y)
-cor.test(stationary$corrected_x, stationary$corrected_y)
-
-# Second attempt: Nonparametric ######################
-
-# Given that the assumptions are not correct, I will need another approach to 
-# estimating the error variances. Instead, we will have to compute an error
-# covariance matrix, preferably in a nonparametric way. This is what we do in 
-# the second attempt.
-#
-# Some assumptions:
+# While deleted in this version of the scripts, we did notice some issues with 
+# the data. More specifically, we found that several parametric assumptions
+# (e.g., normality) do not hold for our data, making it difficult to estimate
+# the error variance in a parametric way. We therefore use a nonparametric way 
+# for estimating the error covariance matrix, which has the following 
+# assumptions:
 #   - The actual measured position is equal to the average of all measured 
 #     positions for a given tag
 #   - The error variance is equal for each of the tags
@@ -255,77 +81,113 @@ bootstrap_data <- function(x, iterations) {
         return()
 }
 
-# Bootstrap the data using this function and immediately compute the necessary
-# summary statistics: 2 variances and 1 covariance.
-#
-# Be careful, this uses a lot of memory!
-covariances <- bootstrap_data(stationary, 1000) %>% 
-    # Compute the statistics
-    group_by(sample_id) %>% 
-    mutate(var_x = var(corrected_x), 
-           var_y = var(corrected_y), 
-           cov_xy = cov(corrected_x, corrected_y)) %>% 
-    ungroup() %>% 
-    # Delete all other information: Only keep variances and covariance
-    group_by(sample_id, var_x, var_y, cov_xy) %>% 
-    tidyr::nest() %>% 
-    select(-data) %>% 
-    ungroup() 
+# Loop over the different dates and do all your estimation 
+set.seed(39) # The Messenger - Thrice
+for(i in seq_along(stationary)){
+    # Load data from specific date and change it somewhat
+    data <- load_stationary(stationary[i]) %>% 
+        # Compute several center statistics, namely mean, median, and mode per
+        # tag
+        group_by(tag) %>%         
+        mutate(mu_x = mean(x),
+               mu_y = mean(y),
+               median_x = median(x), 
+               median_y = median(y), 
+               mode_x = mean(mlv(x, method = "mfv")), 
+               mode_y = mean(mlv(y, method = "mfv"))) %>% 
+        ungroup() %>% 
+        # Create a "corrected" version of the x- and y-positions using the mean.
+        # This one will be used in the estimation of the error covariances.
+        #
+        # Can be replaced with median or mode too, if desired.
+        mutate(corrected_x = x - mu_x, 
+               corrected_y = y - mu_y)
 
-# We can then inspect the histograms of the different statistics under 
-# investigation
-booted_histogram <- function(col){
-    plot_data <- covariances[, col] %>% 
+    # Bootstrap the data using this function and immediately compute the necessary
+    # summary statistics: 2 variances and 1 covariance.
+    #
+    # Be careful, this uses a lot of memory!
+    covariances <- bootstrap_data(data, 1000) %>% 
+        # Compute the covariances based on the corrected x- and y-positions. 
+        # Importantly, this is done for each separate bootstrapped sample.
+        group_by(sample_id) %>% 
+        mutate(var_x = var(corrected_x), 
+               var_y = var(corrected_y), 
+               cov_xy = cov(corrected_x, corrected_y)) %>% 
+        ungroup() %>% 
+        # Delete all other information: Only keep variances and covariance
+        group_by(sample_id, var_x, var_y, cov_xy) %>% 
+        tidyr::nest() %>% 
+        select(-data) %>% 
+        ungroup() 
+
+    # Create summary statistics for each of the covariances, and more specifically 
+    # given quantiles of the bootstrapped distribution. This should give us an 
+    # idea of how badly off we are.
+    #
+    # Here, we use a 99% CI, just to be sure
+    result <- covariances %>% 
+        # Summarize the different variables into CI and mean
+        summarize(lb_var_x = quantile(var_x, 0.005), 
+                  lb_var_y = quantile(var_y, 0.005),
+                  lb_cov_xy = quantile(cov_xy, 0.005), 
+                  m_var_x = mean(var_x), 
+                  m_var_y = mean(var_y), 
+                  m_cov_xy = mean(cov_xy), 
+                  ub_var_x = quantile(var_x, 0.995), 
+                  ub_var_y = quantile(var_y, 0.995),
+                  ub_cov_xy = quantile(cov_xy, 0.995)) %>% 
+        # Restructure the dataframe to be more useful: Put each of the 
+        # covariances as a row, and the lower bounds, mean, and upper bounds 
+        # as the columns 
+        unlist() %>% 
+        matrix(nrow = 3, ncol = 3) %>% 
         as.data.frame() %>% 
-        setNames(c("X"))
+        setNames(c("lb", "mean", "ub")) %>% 
+        cbind(covariance = c("var_x", "var_y", "cov_xy"))    
 
-    (ggplot(plot_data, aes(x = X)) +
-        geom_histogram(col = "black", 
-                       fill = "cornflowerblue")) %>% 
-        return()
+    # Create histograms of the bootstrapped samples for the covariances and 
+    # save these in the specified location.
+    #
+    # First create a function that will make the plot
+    booted_histogram <- function(col){
+        plot_data <- covariances[, col] %>% 
+            as.data.frame() %>% 
+            setNames(c("X"))
+
+        (ggplot(plot_data, aes(x = X)) +
+            geom_histogram(col = "black", 
+                        fill = "cornflowerblue")) %>% 
+            return()
+    }
+
+    # Make three plots and bind them together
+    plt <- ggarrange(booted_histogram("var_x") +
+                        labs(title = "VAR(X)", 
+                             x = "Bootstrapped value"),
+                     booted_histogram("var_y") +
+                        labs(title = "VAR(Y)", 
+                             x = "Bootstrapped value"),
+                     booted_histogram("cov_xy") +
+                        labs(title = "COV(X,Y)", 
+                             x = "Bootstrapped value"),
+                     nrow = 1)
+
+    # Finally save them
+    ggsave(file.path("figures", "calibration_stationary", 
+                     paste0("error_covariance_", stationary[i], ".png")),
+           plot = plt,
+           units = "px",
+           width = 3000, 
+           height = 1300)
+
+    # Release the memory that is held up by the bootstrapped data and the data 
+    # itself.
+    rm(data, covariances)
 }
 
-booted_histogram("var_x")
-booted_histogram("var_y")
-booted_histogram("cov_xy")
-
-# Create several covariance matrices, them being the 99%CI and the mean
-covariances <- list("lb" = matrix(c(quantile(covariances$var_x, 0.005), 
-                                    quantile(covariances$cov_xy, 0.005),
-                                    quantile(covariances$cov_xy, 0.005),
-                                    quantile(covariances$var_y, 0.005)),
-                                  nrow = 2),
-                    "mean" = matrix(c(mean(covariances$var_x), 
-                                      mean(covariances$cov_xy),
-                                      mean(covariances$cov_xy),
-                                      mean(covariances$var_y)),
-                                    nrow = 2),
-                    "ub" = matrix(c(quantile(covariances$var_x, 0.995), 
-                                    quantile(covariances$cov_xy, 0.995),
-                                    quantile(covariances$cov_xy, 0.995),
-                                    quantile(covariances$var_y, 0.995)),
-                                  nrow = 2))
-
-# Save the results of this estimation procedure
-saveRDS(covariances,
-        file.path("Calibration experiments", "Results", "estimate_error_nonparametric.Rds"))
-
-# And get everything into interpretable quantities.
-max_covariance <- covariances[["ub"]]
-print(paste0("The standard deviation for the X dimensions is ", 
-             max_covariance[1,1] %>% sqrt() %>% round(4), 
-             "m, or a total of ",
-             max_covariance[1,1] %>% sqrt() %>% round(4) %>% `*` (100), 
-             "cm."))
-print(paste0("The standard deviation for the Y dimensions is ", 
-             max_covariance[2,2] %>% sqrt() %>% round(4), 
-             "m, or a total of ",
-             max_covariance[2,2] %>% sqrt() %>% round(4) %>% `*` (100), 
-             "cm."))
-print(paste0("The correlation between the two dimensions is ", 
-             max_covariance[1,2] %>% 
-                `/` (sqrt(max_covariance[1,1]) * sqrt(max_covariance[2,2])) %>% 
-                round(4)))
+# Interpretation of the results: 
+#   
 
 
 
