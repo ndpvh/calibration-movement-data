@@ -107,7 +107,7 @@ for(i in seq_along(stationary)){
     # summary statistics: 2 variances and 1 covariance.
     #
     # Be careful, this uses a lot of memory!
-    covariances <- bootstrap_data(data, 1000) %>% 
+    covariances <- bootstrap_data(data, 2500) %>% 
         # Compute the covariances based on the corrected x- and y-positions. 
         # Importantly, this is done for each separate bootstrapped sample.
         group_by(sample_id) %>% 
@@ -144,7 +144,12 @@ for(i in seq_along(stationary)){
         matrix(nrow = 3, ncol = 3) %>% 
         as.data.frame() %>% 
         setNames(c("lb", "mean", "ub")) %>% 
-        cbind(covariance = c("var_x", "var_y", "cov_xy"))    
+        cbind(covariance = c("var_x", "var_y", "cov_xy"))  
+
+    # Save these results
+    save_result(result, 
+                "error_covariance_", 
+                stationary[i])
 
     # Create histograms of the bootstrapped samples for the covariances and 
     # save these in the specified location.
@@ -183,7 +188,8 @@ for(i in seq_along(stationary)){
 
     # Release the memory that is held up by the bootstrapped data and the data 
     # itself.
-    rm(data, covariances)
+    rm(data, covariances, result, plt)
+    gc()
 }
 
 # Interpretation of the results: 
