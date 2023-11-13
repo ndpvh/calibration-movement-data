@@ -228,3 +228,25 @@ saveRDS(moving,
 
 
 
+
+#-------------------------------------------------------------------------------
+# Headband data
+#-------------------------------------------------------------------------------
+
+# Get the data in which we measured stationary tags with headbands.
+#
+# Make use of the fact that all data of these calibrations starts with the word 
+# 'headbands', on which you can select.
+headband <- data %>% 
+    mutate(partial_experiment = stringr::str_sub(experiment, end = 9)) %>% 
+    filter(partial_experiment == "headbands") %>% 
+    select(-partial_experiment)
+
+# TO DO: Filter the data based on the computations done on the stationary data.
+
+# Save these data as being preprocessed
+saveRDS(headband,
+        file.path("data", "preprocessed_headbands_21-10-2023.Rds"))
+
+
+
