@@ -107,7 +107,7 @@ preprocess_measurements <- function(x, anchor_positions = NULL){
         as.data.frame() %>% 
         setNames(c("x", "y"))
 
-    x <- x %>% 
+    x <- corrected %>% 
         # Change the values of x and y to the corrected values, and get rid of 
         # the standardization (get them back to their absolute units)
         mutate(x = minmax_destandardize(x, min_x = xlim[1], max_x = xlim[2]), 
