@@ -107,11 +107,11 @@ preprocess_measurements <- function(x, anchor_positions = NULL){
         as.data.frame() %>% 
         setNames(c("x", "y"))
 
-    x <- corrected %>% 
+    x <- x %>% 
         # Change the values of x and y to the corrected values, and get rid of 
         # the standardization (get them back to their absolute units)
-        mutate(x = minmax_destandardize(x, min_x = xlim[1], max_x = xlim[2]), 
-               y = minmax_destandardize(y, min_x = ylim[1], max_x = ylim[2]))
+        mutate(x = minmax_destandardize(corrected$x, min_x = xlim[1], max_x = xlim[2]), 
+               y = minmax_destandardize(corrected$y, min_x = ylim[1], max_x = ylim[2]))
 
     # Impute NAs in time bins that are empty. This is done to make it very
     # explicit whenever a given tag does not have a measurement in a time bin, 
