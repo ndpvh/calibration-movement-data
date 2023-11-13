@@ -23,9 +23,14 @@
 #' tag number should be contained under `tag` and the experiment name under
 #' `experiment`. As mentioned in the description, the dataframe that is loaded 
 #' through `load_data` conforms to all these requirements.
+#' @param anchor_positions Dataframe that contains the x- and y-positions of the 
+#' anchors under the columns `x` and `y`. These are used to correct the
+#' measurements in the dataframe for the systematic distortions. If this is not 
+#' provided, the measurements are corrected for through the use of the 
+#' measured positions, which is less ideal.
 #' 
 #' @export 
-preprocess_measurements <- function(x){
+preprocess_measurements <- function(x, anchor_positions = NULL){
     # Create a duration column that starts at 0 for each of the different tags 
     # and experiments
     x <- x %>% 
@@ -67,15 +72,35 @@ preprocess_measurements <- function(x){
                y = median_y)
     
     # Correct the distortion in the measurements using parameters that were 
-    # estimated on the October 14th calibration data.
+    # estimated on the October 14th calibration data. This is done in several 
+    # steps:
+    #   - Load in these parameters
+    #   - Determine the positions of the anchors relative to which the measured
+    #     positions are standardized. If not provided, use the minimal and 
+    #     maximal values of the data itself as an alternative
+    #   - Do the correction for the distortion
+    #   - Transform the data back to their previous range
+    #
+    # The calibration data of October 14th is used as it contains more 
+    # measurements than the data of October 21st, increasing the former's power.
+    # Might change with more calibration experiments happening.
     parameters <- readRDS(file.path("results", 
                                     "parameters_polynomial_14-10-2023.Rds"))
+
+    if(is.null(anchor_positions)){
+        tmp <- anchor_positions
+    } else {
+        tmp <- x
+    }
+    xlim <- c(min(tmp$x), max(tmp$x))
+    ylim <- c(min(tmp$y), max(tmp$y))
+
     corrected <- x %>% 
         # Select `x` and `y` and standardize them (parameters are based on 
         # standardized positions)
         select(x, y) %>% 
-        mutate(x = (x - mean(x))/sd(x), 
-               y = (y - mean(y))/sd(y)) %>% 
+        mutate(x = minmax_standardize(x, min_x = xlim[1], max_x = xlim[2]), 
+               y = minmax_standardize(y, min_x = ylim[1], max_x = ylim[2])) %>% 
         # Correct the distortions using the estimated parameters
         correct_distortion(parameters) %>% 
         # Transform to a dataframe for ease of manipulation 
@@ -85,8 +110,8 @@ preprocess_measurements <- function(x){
     x <- x %>% 
         # Change the values of x and y to the corrected values, and get rid of 
         # the standardization (get them back to their absolute units)
-        mutate(x = sd(x) * corrected$x + mean(x), 
-               y = sd(y) * corrected$y + mean(y))
+        mutate(x = minmax_destandardize(x, min_x = xlim[1], max_x = xlim[2]), 
+               y = minmax_destandardize(y, min_x = ylim[1], max_x = ylim[2]))
 
     # Impute NAs in time bins that are empty. This is done to make it very
     # explicit whenever a given tag does not have a measurement in a time bin, 

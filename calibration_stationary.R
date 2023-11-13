@@ -337,11 +337,31 @@ for(i in seq_along(stationary)){
     # and supposed real positions. Standardization is performed to make the
     # function scalable to other data in which the absolute positions are not 
     # the same as these of the calibration phase.
+    #
+    # Importantly, the kind of standardization that is performed is not the 
+    # standard way of doing this. Rather, we want to transform all measured positions 
+    # that fall within the measurement space (i.e., the space bounded by the 
+    # anchors) to fall within -1 and 1. This will allow us to more readily 
+    # translate the calibration on one day to the measurements on another, as 
+    # you are not dependent on the actual measurements for the standardization
+    # (in contrast to the scaled equivalent of the Z-score). Importantly, the 
+    # `minmax_standardize` function does this transformation, as defined in the 
+    # utility functions.
+    #
+    # Unfortunately, we don't have the anchors' positions, so we will assume that 
+    # they lie at the sides of the "real positions" grid. In reality, this will 
+    # probably be off by a few tens of centimeters, but we will have to do 
+    # another, more precisely done calibration to combat the issues that this 
+    # brings.
     data <- load_stationary(stationary[i]) %>% 
-        mutate(standardized_x = (x - mean(x))/sd(x), 
-               standardized_y = (y - mean(y))/sd(y), 
-               standardized_X = (X - mean(X))/sd(X), 
-               standardized_Y = (Y - mean(Y))/sd(Y))
+        mutate(standardized_x = minmax_standardize(x, 
+                                                   min_x = min(X), 
+                                                   max_x = max(X)), 
+               standardized_y = minmax_standardize(y, 
+                                                   min_x = min(Y), 
+                                                   max_x = max(Y)), 
+               standardized_X = minmax_standardize(X), 
+               standardized_Y = minmax_standardize(Y))
 
     # Estimate the 10th degree polynomial on the standardized data
     pars <- list("x" = fit_polynomial(data, 
