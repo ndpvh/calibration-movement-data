@@ -88,9 +88,9 @@ preprocess_measurements <- function(x, anchor_positions = NULL){
                                     "parameters_polynomial_14-10-2023.Rds"))
 
     if(is.null(anchor_positions)){
-        tmp <- anchor_positions
-    } else {
         tmp <- x
+    } else {
+        tmp <- anchor_positions
     }
     xlim <- c(min(tmp$x), max(tmp$x))
     ylim <- c(min(tmp$y), max(tmp$y))
