@@ -5,6 +5,8 @@ experiment
 */*/*/depr 
 */*/*/*/depr
 
+data/all_data/
+
 figures
 test
 
