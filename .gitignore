@@ -10,6 +10,8 @@ data/all_data/
 figures
 test
 
+diana*
+
 *.tar.gz
 *.zip
 *.txt
