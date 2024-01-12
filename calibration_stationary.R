@@ -11,7 +11,9 @@ source(file.path("utility", "utility.R"))
 # Get the dates of both stationary dataframes, which will be used both for 
 # reading in the data and for saving the results of these data.
 stationary <- c("14-10-2023",
-                "21-10-2023")
+                "21-10-2023",
+                "4_anchors_22-12-2023",
+                "6_anchors_22-12-2023")
 
 #-------------------------------------------------------------------------------
 # Some utilities
@@ -110,8 +112,10 @@ for(i in seq_along(stationary)){
     # Bootstrap the data using this function and immediately compute the necessary
     # summary statistics: 2 variances and 1 covariance.
     #
-    # Be careful, this uses a lot of memory!
-    covariances <- bootstrap_data(data, 2500) %>% 
+    # Be careful, this uses a lot of memory! Currently, 1000 samples is all my 
+    # computer can manage (vectorized). Could consider going for unvectorized at 
+    # a later stage
+    covariances <- bootstrap_data(data, 1000) %>% 
         # Compute the covariances based on the corrected x- and y-positions. 
         # Importantly, this is done for each separate bootstrapped sample.
         group_by(sample_id) %>% 
@@ -183,7 +187,9 @@ for(i in seq_along(stationary)){
                      nrow = 1)
 
     # Finally save them
-    ggsave(file.path("figures", "calibration_stationary", 
+    ggsave(file.path("figures", 
+                     "calibration", 
+                     "stationary", 
                      paste0("error_covariance_", stationary[i], ".png")),
            plot = plt,
            units = "px",
@@ -193,7 +199,6 @@ for(i in seq_along(stationary)){
     # Release the memory that is held up by the bootstrapped data and the data 
     # itself.
     rm(data, covariances, result, plt)
-    gc()
 }
 
 # Interpretation of the results: 
@@ -205,6 +210,12 @@ for(i in seq_along(stationary)){
 #   - Worst case scenario -- which is calibration period 2, upper bound of the
 #     99%CI -- there is about 2.25cm of standard error in the x-direction, and
 #     1.80cm of standard error in the y-direction 
+#
+# Additional comments after calibration of 22-12-2023
+#   - Error on this day is a lot bigger. More specifically, the error in standard
+#     deviations is: 
+#       - 4 anchors: 8.7cm (x) and 3.9cm (y)
+#       - 6 anchors: 6.9cm (x) and 8.3cm (y)
 
 
 
@@ -263,7 +274,9 @@ for(i in seq_along(stationary)){
         geom_vline(xintercept = 5, 
                    color = "red")
 
-    ggsave(file.path("figures", "calibration_stationary",
+    ggsave(file.path("figures", 
+                     "calibration", 
+                     "stationary",
                      paste0("sampling_rate_", stationary[i], ".png")),
            plot = plt, 
            units = "px", 
@@ -281,6 +294,12 @@ for(i in seq_along(stationary)){
 #     sampling rate of 6-7Hz 
 #   - Some tags seem to perform worse and only send out responses every once in 
 #     a while.
+#
+# Additional comments after calibration on 22-12-2023
+#   - On this day, sampling with the 6 anchors remained relatively similar to 
+#     the sampling rate on 21-10-2023 (although with a slight loss of frequency).
+#   - Sampling with 4 anchors had an effect on the sampling frequency. Need to 
+#     find out how to increase it again.
 
 
 
@@ -433,7 +452,9 @@ for(i in seq_along(stationary)){
                      nrow = 1)
 
     # Save this plot 
-    ggsave(file.path("figures", "calibration_stationary", 
+    ggsave(file.path("figures", 
+                     "calibration", 
+                     "stationary",
                      paste0("correct_distortion_", stationary[i], ".png")), 
            plot = plt, 
            units = "px", 
@@ -452,3 +473,7 @@ for(i in seq_along(stationary)){
 #     exactly. Given that their are more measured positions in the data from 
 #     the 14th of October, we will assume these estimates have a higher power, 
 #     and will use those for the correction of our distortion.
+#
+# Additional comments after calibration on 22-12-2023
+#   - The 4-anchor data is corrected better than the 6-anchor data, but both 
+#     are worse than the 14-10-2023 counterpart.
