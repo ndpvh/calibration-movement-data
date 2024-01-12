@@ -222,8 +222,9 @@ stationary %>%
                       "stationary", 
                       "preprocessed_stationary_6_anchors_22-12-2023.Rds"))
 
+# For some reason, tags 12 and 60 are missing from these data
 stationary %>% 
-    filter(!(experiment %in% six_anchors)) %>% 
+    filter(experiment %notin% six_anchors) %>% 
     saveRDS(file.path("data",  
                       "calibration", 
                       "stationary", 
