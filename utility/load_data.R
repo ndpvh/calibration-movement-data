@@ -11,7 +11,7 @@ load_data <- function(){
     # Load in both the data about the experiments that were run on both days.
     # The argument `fill = TRUE` is added to ensure that even if the datafile is
     # corrupt, we get a result.
-    exp <- fread(file.path("data", "experiments.csv"),
+    exp <- fread(file.path("data", "raw_data", "experiments.csv"),
                  data.table = FALSE,
                  fill = TRUE) %>%
         # Select only a few columns and rename `id` so that you can later join
@@ -20,7 +20,7 @@ load_data <- function(){
         rename(experiment_id = id)
 
     # Load and preprocess the data that contains the measured positions
-    fread(file.path("data", "datapoints.csv"),
+    fread(file.path("data", "raw_data", "datapoints.csv"),
           data.table = FALSE,
           fill = TRUE) %>%
         # Column names from the NUC
