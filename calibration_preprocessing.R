@@ -201,6 +201,19 @@ visualize_positions(stationary) +
 saveRDS(stationary,
         file.path("data", "preprocessed_stationary_22-12-2023.Rds"))
 
+# As an additional thing, we will also save two kinds of these data, depending 
+# on whether 4 anchors were used for the measurement or not. Then we can use 
+# the code in `calibration_stationary` as it currently is.
+six_anchors <- paste0("stationarity ", 1:4, " - 22-12-2023")
+
+stationary %>% 
+    filter(experiment %in% six_anchors) %>% 
+    saveRDS(file.path("data", "preprocessed_stationary_6_anchors_22-12-2023.Rds"))
+
+stationary %>% 
+    filter(!(experiment %in% six_anchors)) %>% 
+    saveRDS(file.path("data", "preprocessed_stationary_4_anchors_22-12-2023.Rds"))
+
 
 
 
