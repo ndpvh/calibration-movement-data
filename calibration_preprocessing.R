@@ -132,6 +132,80 @@ saveRDS(stationary,
 
 
 #-------------------------------------------------------------------------------
+# Stationary data: 22/12/2023
+#-------------------------------------------------------------------------------
+
+# Get the stationary data for the third calibration experiment. This time, we 
+# did the calibration in the JK building. In this calibration round, we also 
+# measured with either 4 or 6 anchors.
+stationary <- data %>% 
+    filter(str_sub(experiment, 1, 12) == "stationarity") %>%
+    filter(str_sub(experiment, -10, -1) == "22-12-2023")
+
+# Visualize these data
+visualize_positions(stationary)
+
+# Create a function that will assign a measured row number that corresponds to 
+# the row numbers given in the `rectangle` function. It simply works by standardizing 
+# the measured positions, multiplying it by the number of rows in that specific
+# direction (x or y), and then rounding of the value.
+assign_row <- function(x, n_rows){
+    (x - min(x)) %>% 
+        `/` (max(x) - min(x)) %>%
+        `*` (n_rows) %>% 
+        round() %>% 
+        return()
+}
+
+# Use the same ideas as before to preprocess these data and assign them positions
+# that we can assume are close to the actual positions. Here, we need to take 
+# some extra precautions, as there are some datapoints that skew the assignment
+# of the grid. Therefore done in two separate steps.
+stationary <- stationary %>% 
+    # First mutate the x-direction: Anomalies are located in this direction. 
+    #
+    # First, we filter based on the positions of the anchors.
+    # Then we filter based on the row that is assigned to the data. 
+    # Importantly, x should be corrected so that it starts at 0, allowing us to 
+    # adequately filter out the anomalies.
+    filter(between(x, 2.348, 14.35)) %>% 
+    mutate(X = assign_row(x, 10)) %>% 
+    filter(between(x - min(x), min(X), max(X))) %>% 
+    # Now, reasign the rows for the x-direction and also handle the y-direction.
+    # The reasignment is done to correct for any distortions that the now-
+    # deleted anomalies might caused in the assingment of the rows.
+    mutate(X = assign_row(x, 10), 
+           Y = assign_row(y, 7)) %>% 
+    # Delete the tags and use the function `rectangle` to produce new "tags" 
+    # that correspond to individual positions within the grid. 
+    select(-tag) %>% 
+    plyr::join(rectangle(c(10, 7)), 
+               by = c("X", "Y")) %>% 
+    # Correct `X` and `Y` to start at the positions of `x` and `y`
+    mutate(X = X + min(x), 
+           Y = Y + min(y))
+
+# Visualize whether our approximation of the real positions is adequate.
+#
+# It seems that this time, we don't really need a correction. Unfortunately, 
+# however, there does seem to be some systematic push to the right in the 
+# x-direction due to outliers on row 3, column 1. This cannot be corrected in 
+# a standardized way, and we will leave it at that.
+visualize_positions(stationary) +
+    geom_hline(yintercept = unique(stationary$Y),
+               color = "red") +
+    geom_vline(xintercept = unique(stationary$X),
+               color = "red")
+
+# Save these data as being preprocessed
+saveRDS(stationary,
+        file.path("data", "preprocessed_stationary_22-12-2023.Rds"))
+
+
+
+
+
+#-------------------------------------------------------------------------------
 # Moving data
 #-------------------------------------------------------------------------------
 
