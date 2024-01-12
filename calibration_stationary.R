@@ -21,6 +21,8 @@ stationary <- c("14-10-2023",
 # two dates contained within the `stationary` vector.
 load_stationary <- function(x){
     readRDS(file.path("data", 
+                      "calibration",
+                      "stationary",
                       paste0("preprocessed_stationary_", x, ".Rds"))) %>% 
         return()
 }
@@ -32,6 +34,8 @@ load_stationary <- function(x){
 save_result <- function(result, name, x){
     saveRDS(result, 
             file.path("results", 
+                      "calibration",
+                      "stationary",
                       paste0(name, "_", x, ".Rds")))
 }
 

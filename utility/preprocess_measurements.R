@@ -85,6 +85,8 @@ preprocess_measurements <- function(x, anchor_positions = NULL){
     # measurements than the data of October 21st, increasing the former's power.
     # Might change with more calibration experiments happening.
     parameters <- readRDS(file.path("results", 
+                                    "calibration",
+                                    "stationary",
                                     "parameters_polynomial_14-10-2023.Rds"))
 
     if(is.null(anchor_positions)){
