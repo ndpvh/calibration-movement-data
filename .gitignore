@@ -6,6 +6,7 @@ experiment
 */*/*/*/depr
 
 data/all_data/
+data/*.csv
 
 figures
 test
@@ -15,3 +16,4 @@ diana*
 *.tar.gz
 *.zip
 *.txt
+*.png
