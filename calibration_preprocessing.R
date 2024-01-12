@@ -78,7 +78,10 @@ visualize_positions(stationary) +
 
 # Save these data as being preprocessed
 saveRDS(stationary,
-        file.path("data", "preprocessed_stationary_14-10-2023.Rds"))
+        file.path("data", 
+                  "calibration", 
+                  "stationary", 
+                  "preprocessed_stationary_14-10-2023.Rds"))
 
 
 
@@ -125,7 +128,10 @@ visualize_positions(stationary) +
 
 # Save these data as being preprocessed
 saveRDS(stationary,
-        file.path("data", "preprocessed_stationary_21-10-2023.Rds"))
+        file.path("data", 
+                  "calibration", 
+                  "stationary", 
+                  "preprocessed_stationary_21-10-2023.Rds"))
 
 
 
@@ -199,7 +205,10 @@ visualize_positions(stationary) +
 
 # Save these data as being preprocessed
 saveRDS(stationary,
-        file.path("data", "preprocessed_stationary_22-12-2023.Rds"))
+        file.path("data",  
+                  "calibration", 
+                  "stationary", 
+                  "preprocessed_stationary_22-12-2023.Rds"))
 
 # As an additional thing, we will also save two kinds of these data, depending 
 # on whether 4 anchors were used for the measurement or not. Then we can use 
@@ -208,11 +217,17 @@ six_anchors <- paste0("stationarity ", 1:4, " - 22-12-2023")
 
 stationary %>% 
     filter(experiment %in% six_anchors) %>% 
-    saveRDS(file.path("data", "preprocessed_stationary_6_anchors_22-12-2023.Rds"))
+    saveRDS(file.path("data",  
+                      "calibration", 
+                      "stationary", 
+                      "preprocessed_stationary_6_anchors_22-12-2023.Rds"))
 
 stationary %>% 
     filter(!(experiment %in% six_anchors)) %>% 
-    saveRDS(file.path("data", "preprocessed_stationary_4_anchors_22-12-2023.Rds"))
+    saveRDS(file.path("data",  
+                      "calibration", 
+                      "stationary", 
+                      "preprocessed_stationary_4_anchors_22-12-2023.Rds"))
 
 
 
@@ -280,7 +295,10 @@ moving <- fread(file.path("data", "moving_times_14-10-2023.txt"),
 # 
 # This is required to have an adequate idea of speed, as it was measured from
 # one side of the grid to the other. 
-stationary <- readRDS(file.path("data", "preprocessed_stationary_14-10-2023.Rds"))
+stationary <- readRDS(file.path("data",  
+                                "calibration", 
+                                "stationary", 
+                                "preprocessed_stationary_14-10-2023.Rds"))
 
 # Determine the limits in the y and x direction
 ylims <- stationary %>% 
@@ -310,7 +328,10 @@ visualize_positions(moving) +
 
 # Save these data as being preprocessed
 saveRDS(moving,
-        file.path("data", "preprocessed_movement_14-10-2023.Rds"))
+        file.path("data", 
+                  "calibration", 
+                  "movement",
+                  "preprocessed_movement_14-10-2023.Rds"))
 
 
 
@@ -333,7 +354,10 @@ headband <- data %>%
 
 # Save these data as being preprocessed
 saveRDS(headband,
-        file.path("data", "preprocessed_headbands_21-10-2023.Rds"))
+        file.path("data",
+                  "calibration",
+                  "headbands",
+                  "preprocessed_headbands_21-10-2023.Rds"))
 
 
 
