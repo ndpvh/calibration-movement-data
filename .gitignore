@@ -1,11 +1,11 @@
 experiment
 
-*/depr
-*/*/depr
-*/*/*/depr 
-*/*/*/*/depr
+*/_depr
+*/*/_depr
+*/*/*/_depr 
+*/*/*/*/_depr
 
-data/all_data/
+data/raw_data/
 data/*.csv
 
 figures
