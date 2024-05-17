@@ -1,12 +1,20 @@
 experiment
 
-*/depr
-*/*/depr
-*/*/*/depr 
-*/*/*/*/depr
+*/_depr
+*/*/_depr
+*/*/*/_depr 
+*/*/*/*/_depr
 
-results
+data/raw_data/
+data/*.csv
+
+figures
+test
+synthetic*
+
+diana*
 
 *.tar.gz
 *.zip
 *.txt
+*.png
