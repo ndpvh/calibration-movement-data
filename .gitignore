@@ -19,3 +19,4 @@ diana*
 *.txt
 *.png
 .DS_Store
+.vscode/
