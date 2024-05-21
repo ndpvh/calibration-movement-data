@@ -1,0 +1,30 @@
+Package: nameless
+Type: Package
+Title: Preprocessing Movement Data
+Version: 1.0
+Date: 2024-05-21
+Author: person("Niels", 
+               "Vanhasbroeck", 
+               email = "niels.vanhasbroeck@gmail.com",
+               comment = c(ORCID = 0000-0002-7423-0090))
+Maintainer: Niels Vanhasbroeck <niels.vanhasbroeck@gmail.com>
+Description: Research project that revolves around preprocessing movement data obtained through ultra wideband measuring devices. The aim is to quantify and limit measurement error in the movement data, which may ultimately lead to guidelines for other researchers who deal with these type of data.
+License: GPL v3
+Encoding: UTF-8
+Imports: 
+    matrixStats,
+    methods,
+    predped,
+    ggplot2,
+    dplyr,
+    tidyr
+RoxygenNote: 7.3.1
+Collate:
+    'utility.R'
+    'plot.R'
+Suggests: 
+    fs,
+    testthat (>= 3.0.0)
+Remotes:
+    ndpvh/predped
+Config/testthat/edition: 3
