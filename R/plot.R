@@ -20,6 +20,8 @@
 #' @param ... Additional arguments to pass to ggplot2.
 #' 
 #' @return List of plots, one for each time points in the dataframe.
+#' 
+#' @export
 plot <- function(x, 
                  as_points = FALSE, 
                  per_iteration = TRUE,
