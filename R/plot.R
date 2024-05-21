@@ -106,7 +106,8 @@ plot_point <- function(x, ...) {
         ggplot2::geom_point(...) +
         ggplot2::xlab("x") + 
         ggplot2::ylab("y") +
-        ggplot2::theme_minimal()
+        ggplot2::theme_minimal() +
+        ggplot2::coord_equal()
 
     return(plt)
 }
@@ -164,7 +165,8 @@ plot_pedestrian <- function(x, ...) {
         ggplot2::geom_segment(...) +
         ggplot2::xlab("x") + 
         ggplot2::ylab("y") +
-        ggplot2::theme_minimal()
+        ggplot2::theme_minimal() +
+        ggplot2::coord_equal()
 
     return(plt)
 }
