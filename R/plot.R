@@ -23,7 +23,15 @@
 plot <- function(x, 
                  as_points = FALSE, 
                  per_iteration = TRUE,
+                 limits = NULL,
                  ...) {
+
+    # Get limits of the plot
+    if(is.null(limits)) {
+        limits <- cbind(x = range(x$x) + 0.25 * c(-1, 1),
+                        y = range(x$y) + 0.25 * c(-1, 1)) %>% 
+            as.data.frame()
+    }
     
     # Transform the time-variable to integers denoting the order of the 
     # positions
@@ -82,7 +90,9 @@ plot <- function(x,
 
             # Make the plot
             plt[[i]] <- fx(plot_data, ...) +
-                ggplot2::labs(title = paste0("time point ", i))
+                ggplot2::labs(title = paste0("time point ", i)) +
+                ggplot2::lims(x = limits$x, 
+                              y = limits$y)
         }
         cat("\n")
 
@@ -91,7 +101,9 @@ plot <- function(x,
             tidyr::unnest(data) %>% 
             dplyr::ungroup()
 
-        plt <- fx(x, ...)
+        plt <- fx(x, ...) +
+            ggplot2::lims(x = limits$x, 
+                          y = limits$y)
     }
     
     return(plt)
