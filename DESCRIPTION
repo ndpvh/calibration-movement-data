@@ -17,6 +17,7 @@ Imports:
     predped,
     ggplot2,
     dplyr,
+    magrittr,
     tidyr
 RoxygenNote: 7.3.1
 Collate:
