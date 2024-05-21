@@ -3,6 +3,10 @@
 #          preprocessing strategies. For this, we will use the predped package #
 #          to simulate pedestrian movement. Then, we add different kinds of    #
 #          measurement error to these data.                                    #
+#                                                                              #
+#          The primary reason for generating these data is to find out which   #
+#          methods are best to use for filtering the data and ridding it of    #
+#          unsystematic error.                                                 #
 ################################################################################
 
 library(predped)
@@ -67,7 +71,7 @@ model <- predped::predped(id = "synthetic",
 #     participant 
 #   - Number of participants is set to 10, with no way to get more participants
 #   - Number of goals is set to an impossible amount to reach
-set.seed(74327) # Tides of Man - Knowing That You've Arrived
+set.seed(74327) # Knowing That You've Arrived - Tides of Man
 trace <- predped::simulate(model, 
                            initial_number_agents = 10, 
                            max_agents = 10, 
@@ -88,10 +92,10 @@ poly_size <- c(max(points[,1] - min(points[,1])),
 plt <- plot(trace, trace = TRUE, linewidth = 1.5)
 plt <- lapply(plt, 
               \(x) x + 
-                   ggplot2::theme(legend.position = "none",
-                                  plot.title = ggplot2::element_text(size = 5 * max(poly_size),
-                                                                     hjust = 0.5),
-                                  axis.text = ggplot2::element_text(size = 2.5 * max(poly_size))))
+                  ggplot2::theme(legend.position = "none",
+                                 plot.title = ggplot2::element_text(size = 5 * max(poly_size),
+                                                                    hjust = 0.5),
+                                 axis.text = ggplot2::element_text(size = 2.5 * max(poly_size))))
 
 gifski::save_gif(lapply(plt, \(x) print(x)),                                     
                  file.path("data", "synthetic", "synthetic_trace.gif"),
@@ -99,8 +103,30 @@ gifski::save_gif(lapply(plt, \(x) print(x)),
                  width = poly_size[1] * 200, 
                  height = poly_size[2] * 200)
 
-# Save the results
-saveRDS(trace, file.path("data", "synthetic", "synthetic_trace.Rds"))
+# Load the data and transform to a dataframe. Save this dataframe as being the 
+# "real data". These data will have the following columns: 
+#      - x, y: Coordinates at which the pedestrian was standing
+#      - time: A variable denoting the time that has passed in seconds
+#      - id: The name of the pedestrian
+data <- lapply(seq_along(trace), 
+               \(i) sapply(trace[[i]]$agents, 
+                           \(y) c(predped::id(y), 
+                                  predped::position(y))) %>% 
+                   t() %>% 
+                   as.data.frame() %>% 
+                   setNames(c("id", "x", "y")) %>% 
+                   cbind(time = (i - 1)/10) %>% 
+                   select(time, id:y))
+data <- do.call("rbind", data)
+
+# Make sure everything is in the correct format
+data <- data %>% 
+    dplyr::mutate(x = as.numeric(x), 
+                  y = as.numeric(y), 
+                  time = as.numeric(time))
+
+# Save these data
+data.table::fwrite(data, file.path("data", "synthetic", "synthetic_original.csv"))
 
 
 
@@ -109,19 +135,194 @@ saveRDS(trace, file.path("data", "synthetic", "synthetic_trace.Rds"))
 ################################################################################
 # MEASUREMENT ERROR
 
-# Load the data and transform to a dataframe. Save this dataframe as being the 
-# "real data"
-trace <- readRDS(file.path("data", "synthetic", "synthetic_trace.Rds"))
+####################################
+# Create a dataset with random measurement error (no relation between the 
+# different dimensions)
 
-data <- lapply(seq_along(trace), 
-               \(i) sapply(trace[[i]]$agents, 
-                           \(y) c(predped::id(y), 
-                                  predped::position(y))) %>% 
-                   t() %>% 
-                   as.data.frame() %>% 
-                   setNames(c("id", "x", "y")) %>% 
-                   cbind(time = i) %>% 
-                   select(time, id:y))
-data <- do.call("rbind", data)
+# Load the original dataset
+data <- data.table::fread(file.path("data", "synthetic", "synthetic_original.csv"), 
+                          data.table = FALSE)
 
-saveRDS(data. file.path("data", "synthetic", "synthetic_original.Rds"))
+# Transform the dataset to include random error. This error will be equal to 
+# a few centimeters, based on earlier estimates of the measurement error, 
+# specifically coming from the calibration test of 22-12-2023, where the upper 
+# bound of the 99%CI was about 8cm. Using this information, we can derive the 
+# standard deviation as follows:
+#    - Find qnorm(0.995, 0, 1), which is equal to about 2.58. This value 
+#      communicates for what value of x the probability of falling below it is 
+#      equal to 99.5%.
+#    - Realizing that for our distribution, this value should be equal to 0.08, 
+#      we can derive the needed standard deviation as being equal to 0.08 / 2.58, 
+#      which is approximately 0.031
+#    - To check our result, we can get the probability of falling below 8 for 
+#      the specified distribution by using pnorm(0.08, 0, 0.031). This value 
+#      should be equal to 99.5%, and indeed it is approximately so
+set.seed(546) # Aaahh!!! Real Spiders - Wind Walkers
+data <- data %>% 
+    dplyr::rename(x_original = x, 
+                  y_original = y) %>% 
+    dplyr::mutate(x = rnorm(length(x_original), x_original, 0.031), 
+                  y = rnorm(length(y_original), y_original, 0.031))
+
+# Save these data
+data.table::fwrite(data, file.path("data", "synthetic", "synthetic_unrelated_10.csv"))
+
+
+
+####################################
+# Create a dataset with random measurement error (relationship between error 
+# in both dimensions, correlation of 0.25, which is much more than observed)
+
+# Load the original dataset
+data <- data.table::fread(file.path("data", "synthetic", "synthetic_original.csv"), 
+                          data.table = FALSE)
+
+# Transform the dataset to include random error. We use a similar approach as 
+# earlier, but no also include correlations. To do this, we first create a 
+# matrix that contains standard deviations on its diagonal, and another matrix 
+# that contains the correlations on its off-diagonal while having 1's on its 
+# diagonal. We then use these matrices to create the covariance matrix, from
+# which we then generate the residuals to be added to the x and y coordinates
+SD <- diag(rep(0.031, 2))
+COR <- c(1, 0.25, 0.25, 1) %>% 
+    matrix(ncol = 2)
+COV <- SD %*% COR %*% SD
+
+set.seed(7244) # Falling on Deaf Ears - Hail the Sun
+residuals <- MASS::mvrnorm(nrow(data), c(0, 0), COV)
+
+data <- data %>% 
+    dplyr::rename(x_original = x, 
+                  y_original = y) %>% 
+    dplyr::mutate(x = x_original + residuals[,1], 
+                  y = y_original + residuals[,2])
+
+# Save these data
+data.table::fwrite(data, file.path("data", "synthetic", "synthetic_related_10.csv"))
+
+
+
+####################################
+# Create unequal time bins by random missingness. Keep a sampling rate of about
+# 6Hz (observed in data)
+
+# Load the two measurement error datasets
+data <- list(data.table::fread(file.path("data", "synthetic", "synthetic_unrelated_10.csv"),
+                               data.table = FALSE),
+             data.table::fread(file.path("data", "synthetic", "synthetic_related_10.csv"),
+                               data.table = FALSE))
+
+# Determine which iterations you will delete. Number of deletions will impose a 
+# mean sampling rate of 6Hz across different people
+set.seed(313) # 3's & 7's - Queens of the Stone Age
+N <- nrow(data[[1]])
+idx <- sample(1:N, round(0.4 * N))
+
+# Apply this to the data
+data <- lapply(data, 
+               \(x) x[-idx,])
+
+# And save the results
+data.table::fwrite(data[[1]], 
+                   file.path("data", "synthetic", "synthetic_unrelated_6random.csv"))
+data.table::fwrite(data[[2]], 
+                   file.path("data", "synthetic", "synthetic_related_6random.csv"))
+
+
+
+####################################
+# Create unequal time bins by nonrandom missingness. Keep a sampling rate of 
+# about 6Hz (observed in the data)
+
+# Load the two measurement error datasets
+data <- list(data.table::fread(file.path("data", "synthetic", "synthetic_unrelated_10.csv"),
+                               data.table = FALSE),
+             data.table::fread(file.path("data", "synthetic", "synthetic_related_10.csv"),
+                               data.table = FALSE))
+
+# The approach we take here is an easy one, where we draw random time points at 
+# which no position is measured. Once chosen, we then either keep it at this one
+# time point, or we make the period at which no measurements are obtained longer 
+# (5 observations, 10 observations, or 15 observations, it being 500msec, 1sec,
+# or 1.5sec long). We try to approximate each time as being as long as the other.
+#
+# In practice, we delete the indices in two waves: One in which we take care of 
+# the longer problems, then one in which we delete only a single data point 
+# randomly up until as there are as many missing observations for the nonrandom 
+# and the random missing data (created earlier)
+set.seed(9410) # Newsstand Rock (exposition) - Rx Bandits
+N <- nrow(data[[1]])
+idx <- cbind(sample(1:length(unique(data[[1]]$time)),          # Sample time points to delete
+                    round(0.3 * N / 10), replace = TRUE),      # As many as to have about 75% of missing data being in longer blocks
+             sample(unique(data[[1]]$id),                      # Sample participants whose date to delete in unison
+                    round(0.3 * N) / 10, replace = TRUE)) %>%  # As many as there are blocks to delete         
+    as.data.frame() %>% 
+    setNames(c("from", "participants")) %>% 
+    dplyr::mutate(from = as.numeric(from)) %>% 
+    dplyr::mutate(to = from + rep(c(5, 10, 15), each = round(length(from) / 3)))
+
+# Delete these time points from the data for each individual separately
+pid <- unique(idx$participants)
+for(i in seq_along(data)) {
+    new_data <- list()
+    for(j in seq_along(pid)) {
+        # Filter data on the participant name
+        individual_data <- dplyr::filter(data[[i]], id == pid[j])
+        idy <- dplyr::filter(idx, participants == pid[j])
+
+        # And delete the iterations asked for
+        idy <- multi_seq(idy$from, idy$to, by = 1) %>% 
+            unlist()
+
+        new_data[[j]] <- individual_data[-idy,]
+    }
+    data[[i]] <- do.call("rbind", new_data) %>% 
+        dplyr::arrange(time)
+    row.names(data[[i]]) <- NULL
+}
+
+# Now sample the remaining time points to be deleted from the remaining data 
+# points
+idx <- sample(1:nrow(data[[1]]), nrow(data[[1]]) - 0.6 * N)
+
+data <- lapply(data, 
+               \(x) x[-idx,])
+
+# And save the results
+data.table::fwrite(data[[1]], 
+                   file.path("data", "synthetic", "synthetic_unrelated_6nonrandom.csv"))
+data.table::fwrite(data[[2]], 
+                   file.path("data", "synthetic", "synthetic_related_6nonrandom.csv"))
+
+
+
+
+
+################################################################################
+# VISUALIZATION
+
+# Names of all the files to make gifs of off
+names <- c("synthetic_original", 
+           "synthetic_unrelated_10",
+           "synthetic_related_10",
+           "synthetic_unrelated_6random", 
+           "synthetic_related_6random",
+           "synthetic_unrelated_6nonrandom",
+           "synthetic_related_6nonrandom")
+
+# Loop over all of these files
+for(i in names) {
+    data <- data.table::fread(file.path("data", 
+                                        "synthetic",
+                                        paste0(i, ".csv")), 
+                              data.table = FALSE)
+
+    plt <- plot(data)
+    gifski::save_gif(lapply(plt, \(x) print(x)), 
+                     file.path("data", 
+                             "synthetic", 
+                             paste0(i, ".gif")),
+                     width = 2000, 
+                     height = 1000,
+                     delay = 1/10)
+}
