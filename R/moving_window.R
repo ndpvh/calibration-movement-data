@@ -78,11 +78,13 @@ moving_window <- function(data,
 
         # Add nested tibbles that contain the data for the specified spans to
         # the indices. Make the indices in `index` relative to the primary 
-        # observation index in 'obs'
+        # observation index in 'obs', and add a `relative_time` variable that 
+        # shows the time relative to the time of the observation
         individual_data <- idx %>% 
             dplyr::rowwise() %>% 
             dplyr::mutate(data = individual_data[from:to,] %>% 
-                                     dplyr::mutate(index = index - obs) %>% 
+                                     dplyr::mutate(index = index - obs, 
+                                                   relative_time = time - time[obs]) %>% 
                                      dplyr::arrange(time) %>% 
                                      tidyr::nest()) %>% 
             dplyr::ungroup() %>% 
