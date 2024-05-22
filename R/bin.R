@@ -57,20 +57,15 @@ bin <- function(data,
 
         # Add an integer index to the data. This will allow researchers some 
         # flexibility with regard to how to assign weights to the different
-        # observations
+        # observations. Furthermore specify the bin number to which each of the 
+        # data points will be assigned.
         individual_data <- individual_data %>% 
-            dplyr::mutate(index = dplyr::row_number())
-
-        # Define the length of the data and create the time points to be taken 
-        # into account using the `span` argument
-        N <- nrow(individual_data)
-        individual_data <- individual_data %>% 
-            dplyr::mutate(bin_number = ceiling(time / span)) %>% 
-            dplyr::mutate(bin_time = bin_number * span / 2)
+            dplyr::mutate(index = dplyr::row_number(),
+                          bin_number = ceiling(time / span))
 
         # Add nested tibbles that contain the data for the specified span and 
         # apply the specified function to the data
-        individual_data <- individual_data %>% 
+        all_data[[i]] <- individual_data %>% 
             # Group by bin number
             dplyr::group_by(bin_number) %>% 
             tidyr::nest() %>% 
@@ -78,20 +73,21 @@ bin <- function(data,
             dplyr::rowwise() %>% 
             dplyr::mutate(data = data %>% 
                               as.data.frame() %>% 
-                              dplyr::mutate(relative_time = time - bin_time) %>% 
+                              dplyr::mutate(relative_time = time - bin_number * span / 2,
+                                            index = index - mean(index)) %>% 
                               fx()) %>% 
             tidyr::unnest(data) %>% 
             dplyr::ungroup() %>% 
             # Add the variables time and id to the mix again. As time, take the 
             # middle of the bin
-            dplyr::rename(time = bin_time) %>% 
-            dplyr::mutate(id = group[i])
-            
+            dplyr::rowwise() %>% 
+            dplyr::mutate(time = (bin_number - 0.5) * span, 
+                          id = group[i]) %>% 
+            dplyr::ungroup()
     }
 
     # Bind all data together and sort based on time
     data <- do.call("rbind", all_data) %>% 
-        dplyr::select(-index, -relative_time) %>% 
         dplyr::select(time:id, x:y) %>% 
         dplyr::arrange(time) %>% 
         as.data.frame()    
