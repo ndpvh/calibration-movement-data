@@ -8,7 +8,10 @@
 #' number of neighbours to take in to account in each direction relative to the 
 #' central data point to be smoothed. In other words, if you take `span = 2`, 
 #' then you will smooth over the indices `c(-2, -1, 0, 1, 2)` where index `0` 
-#' represents the datapoint to be smoothed.
+#' represents the datapoint to be smoothed. These kinds of indices are also 
+#' provided to the researcher in the function `fx`, allowing them to assign 
+#' different weights to each of the neighbours around a central observation. 
+#' The relative indices in a window are found under the column `index`.
 #' 
 #' @param data Dataframe that contains the columns `time`, `id`, `x`, and `y`.
 #' @param span Integer denoting the number of neighbours in each direction to 
@@ -55,11 +58,18 @@ moving_window <- function(data,
             individual_data <- data
         }
 
+        # Add an integer index to the data. This will allow researchers some 
+        # flexibility with regard to how to assign weights to the different
+        # observations
+        individual_data <- individual_data %>% 
+            dplyr::mutate(index = dplyr::row_number())
+
         # Define the length of the data and create the time points to be taken 
         # into account using the `span` argument
         N <- nrow(individual_data)
         idx <- cbind(from = 1:N - span, 
-                     to = 1:N + span) %>% 
+                     to = 1:N + span,
+                     obs = 1:N) %>% 
             as.data.frame()
 
         # Delete nonexisting indices from this list
@@ -67,12 +77,13 @@ moving_window <- function(data,
         idx[idx > N] <- N
 
         # Add nested tibbles that contain the data for the specified spans to
-        # the indices
+        # the indices. Make the indices in `index` relative to the primary 
+        # observation index in 'obs'
         individual_data <- idx %>% 
             dplyr::rowwise() %>% 
             dplyr::mutate(data = individual_data[from:to,] %>% 
+                                     dplyr::mutate(index = index - obs) %>% 
                                      dplyr::arrange(time) %>% 
-                                    #  tidyr::as_tibble() %>% 
                                      tidyr::nest()) %>% 
             dplyr::ungroup() %>% 
             cbind(individual_data) %>% 
@@ -90,7 +101,7 @@ moving_window <- function(data,
 
     # Bind all data together and sort based on time
     data <- do.call("rbind", all_data) %>% 
-        dplyr::select(-from, -to) %>% 
+        dplyr::select(-from, -to, -obs, -index) %>% 
         dplyr::select(time:id, x:y) %>% 
         dplyr::arrange(time) %>% 
         as.data.frame()    
