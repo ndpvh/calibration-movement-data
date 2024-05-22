@@ -97,3 +97,42 @@ testthat::test_that("Moving window: Grouping", {
     testthat::expect_equal(tst_1, ref_1)
     testthat::expect_equal(tst_2, ref_2)
 })
+
+
+
+
+
+################################################################################
+# STATISTICS TO USE WITH THE MOVING WINDOW
+
+# Moving average
+testthat::test_that("Moving window: Average", {
+    # Create different predictable data sets
+    data <- list(cbind(rep(1, each = 5),
+                       rep(1, each = 5), 
+                       1:5,
+                       6:10), 
+                 cbind(rep(1, each = 5), 
+                       rep(1, each = 5), 
+                       rep(1, each = 5), 
+                       rep(2, each = 5)),
+                 cbind(rep(1, each = 5), 
+                       rep(1, each = 5), 
+                       c(1, 1, NA, 1, 1), 
+                       c(1, 2, 3, 4, NA)))
+                       
+    # Apply the average function on each of these data
+    tst <- lapply(data, 
+                  \(x) x %>% 
+                      as.data.frame() %>% 
+                      setNames(c("time", "id", "x", "y")) %>% 
+                      nameless::average())
+
+    # Define the references
+    ref <- list(data.frame(x = 3, y = 8),
+                data.frame(x = 1, y = 2), 
+                data.frame(x = as.numeric(NA), y = as.numeric(NA)))
+
+    # Tests
+    testthat::expect_equal(tst, ref)
+})
