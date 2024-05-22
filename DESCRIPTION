@@ -25,6 +25,7 @@ Collate:
     'plot.R'
     'execute_pipeline.R'
     'moving_window.R'
+    'bin.R'
 Suggests: 
     fs,
     testthat (>= 3.0.0)
