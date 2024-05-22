@@ -6,11 +6,10 @@ experiment
 */*/*/*/_depr
 
 data/raw_data/
-data/*.csv
+*.gif
+synthetic_trace.Rds
 
 figures
-test
-synthetic*
 
 diana*
 
