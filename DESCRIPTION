@@ -23,6 +23,8 @@ RoxygenNote: 7.3.1
 Collate:
     'utility.R'
     'plot.R'
+    'execute_pipeline.R'
+    'moving_window.R'
 Suggests: 
     fs,
     testthat (>= 3.0.0)
