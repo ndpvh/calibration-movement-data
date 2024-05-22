@@ -32,5 +32,8 @@ Importantly, the span is a relative variable, that is it represents the
 number of neighbours to take in to account in each direction relative to the 
 central data point to be smoothed. In other words, if you take `span = 2`, 
 then you will smooth over the indices `c(-2, -1, 0, 1, 2)` where index `0` 
-represents the datapoint to be smoothed.
+represents the datapoint to be smoothed. These kinds of indices are also 
+provided to the researcher in the function `fx`, allowing them to assign 
+different weights to each of the neighbours around a central observation. 
+The relative indices in a window are found under the column `index`.
 }
