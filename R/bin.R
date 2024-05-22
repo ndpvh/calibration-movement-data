@@ -19,7 +19,7 @@
 #' @param .by String denoting whether the moving window should be taken with 
 #' respect to a given grouping variable. Defaults to `NULL`
 #' 
-#' @return 
+#' @return Binned dataframe with a similar structure as `data`
 #' 
 #' @export 
 bin <- function(data, 
