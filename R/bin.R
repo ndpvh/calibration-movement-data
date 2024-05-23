@@ -61,7 +61,10 @@ bin <- function(data,
         # data points will be assigned.
         individual_data <- individual_data %>% 
             dplyr::mutate(index = dplyr::row_number(),
-                          bin_number = ceiling(time / span))
+                          bin_number = ceiling(time / span)) %>% 
+            # If time starts at 0, we want this data point to be added to the 
+            # first bin
+            dplyr::mutate(bin_number = ifelse(bin_number == 0, 1, bin_number))
 
         # Add nested tibbles that contain the data for the specified span and 
         # apply the specified function to the data
@@ -73,7 +76,7 @@ bin <- function(data,
             dplyr::rowwise() %>% 
             dplyr::mutate(data = data %>% 
                               as.data.frame() %>% 
-                              dplyr::mutate(relative_time = time - bin_number * span / 2,
+                              dplyr::mutate(relative_time = time - (bin_number - 0.5) * span,
                                             index = index - mean(index)) %>% 
                               fx()) %>% 
             tidyr::unnest(data) %>% 
