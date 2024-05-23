@@ -25,7 +25,7 @@
 execute_pipeline <- function(data, 
                              fx) {
     for(i in seq_along(fx)) {
-        data <- fx(data)
+        data <- fx[[i]](data)
     }
     return(data)
 }
