@@ -25,7 +25,10 @@
 execute_pipeline <- function(data, 
                              fx) {
     for(i in seq_along(fx)) {
+        cat(paste0("\rExecuting function ", i))
+        
         data <- fx[[i]](data)
     }
+    cat("\n")
     return(data)
 }
