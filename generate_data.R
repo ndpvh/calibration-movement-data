@@ -18,42 +18,42 @@ devtools::load_all()
 # a very simple environment. The room will be 10m x 5m, and the coordinate system
 # will start in the lower-left corner at (0, 0). There will be 10 objects to 
 # interact with
-setting <- background(shape = predped::rectangle(center = c(5, 2.5),
-                                                 size = c(10, 5)),
-                      objects = list(predped::rectangle(center = c(2.1, 1.1),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE),
-                                     predped::rectangle(center = c(2.1, 2.5),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE),
-                                     predped::rectangle(center = c(2.1, 3.9),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE),
-
-                                     predped::rectangle(center = c(7.9, 1.1),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE),
-                                     predped::rectangle(center = c(7.9, 2.5),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE),
-                                     predped::rectangle(center = c(7.9, 3.9),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE),
-
-                                     predped::rectangle(center = c(4.2, 1.1),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE),
-                                     predped::rectangle(center = c(5.8, 1.1),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE),
-
-                                     predped::rectangle(center = c(4.2, 3.9),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE),
-                                     predped::rectangle(center = c(5.8, 3.9),
-                                                        size = c(0.2, 0.2),
-                                                        interactable = TRUE)),
-                       entrance = c(0, 2.5))
+setting <- predped::background(shape = predped::rectangle(center = c(5, 2.5),
+                                                          size = c(10, 5)),
+                               objects = list(predped::rectangle(center = c(2.1, 1.1),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE),
+                                              predped::rectangle(center = c(2.1, 2.5),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE),
+                                              predped::rectangle(center = c(2.1, 3.9),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE),
+         
+                                              predped::rectangle(center = c(7.9, 1.1),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE),
+                                              predped::rectangle(center = c(7.9, 2.5),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE),
+                                              predped::rectangle(center = c(7.9, 3.9),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE),
+         
+                                              predped::rectangle(center = c(4.2, 1.1),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE),
+                                              predped::rectangle(center = c(5.8, 1.1),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE),
+         
+                                              predped::rectangle(center = c(4.2, 3.9),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE),
+                                              predped::rectangle(center = c(5.8, 3.9),
+                                                                 size = c(0.2, 0.2),
+                                                                 interactable = TRUE)),
+                                entrance = c(0, 2.5))
 
 # Create a model. Here, I will just keep one archetype of people in there to 
 # simplify everything a bit.
@@ -70,59 +70,65 @@ model <- predped::predped(id = "synthetic",
 #     participant 
 #   - Number of participants is set to 10, with no way to get more participants
 #   - Number of goals is set to an impossible amount to reach
+#
+# We run these simulations 100 times, allowing us to estimate the variability 
+# around the efficacy of a given preprocessing pipeline. One simulation should 
+# take about 22min 4sec, so do give yourself some time to run this (about 37 
+# hours total, not in parallel).
+
+# Create the different seeds that will be used to create the data.
 set.seed(74327) # Knowing That You've Arrived - Tides of Man
-trace <- predped::simulate(model, 
-                           initial_number_agents = 10, 
-                           max_agents = 10, 
-                           iterations = 9000, 
-                           time_step = 1 / 10,
-                           goal_number = 1000, 
-                           goal_duration = 10, 
-                           order_goal_stack = FALSE)
+seeds <- sample(1:10000, 100)
 
-# Make into plots and a gif for inspection
-#   - Get size of rectangle of setting
-#   - Create plots
-#   - Create gif
-points <- shape(setting)@points
-poly_size <- c(max(points[,1] - min(points[,1])),
-               max(points[,2] - min(points[,2])))
+# Create a function that will take in the seeds and output the data
+simulate_data <- function(x) {
+    print(x)
 
-plt <- plot(trace, trace = TRUE, linewidth = 1.5)
-plt <- lapply(plt, 
-              \(x) x + 
-                  ggplot2::theme(legend.position = "none",
-                                 plot.title = ggplot2::element_text(size = 5 * max(poly_size),
-                                                                    hjust = 0.5),
-                                 axis.text = ggplot2::element_text(size = 2.5 * max(poly_size))))
+    set.seed(seeds[x])
 
-gifski::save_gif(lapply(plt, \(x) print(x)),                                     
-                 file.path("data", "synthetic", "synthetic_trace.gif"),
-                 delay = 1/50, 
-                 width = poly_size[1] * 200, 
-                 height = poly_size[2] * 200)
+    # Create the trace using the predped package
+    trace <- predped::simulate(model, 
+                               initial_number_agents = 10, 
+                               max_agents = 10, 
+                               iterations = 9000, 
+                               time_step = 1 / 10,
+                               goal_number = 1000, 
+                               goal_duration = 10, 
+                               order_goal_stack = FALSE,
+                               report = FALSE)
+    
+    # Load the data and transform to a dataframe. Save this dataframe as being the 
+    # "real data". These data will have the following columns: 
+    #      - x, y: Coordinates at which the pedestrian was standing
+    #      - time: A variable denoting the time that has passed in seconds
+    #      - id: The name of the pedestrian
+    data <- lapply(seq_along(trace), 
+                   \(i) sapply(trace[[i]]$agents, 
+                               \(y) c(predped::id(y), 
+                                      predped::position(y))) %>% 
+                       t() %>% 
+                       as.data.frame() %>% 
+                       setNames(c("id", "x", "y")) %>% 
+                       cbind(time = (i - 1)/10) %>% 
+                       dplyr::select(time, id:y))
+    data <- do.call("rbind", data)
+    
+    # Make sure everything is in the correct format
+    data <- data %>% 
+        dplyr::mutate(x = as.numeric(x), 
+                      y = as.numeric(y), 
+                      time = as.numeric(time))
 
-# Load the data and transform to a dataframe. Save this dataframe as being the 
-# "real data". These data will have the following columns: 
-#      - x, y: Coordinates at which the pedestrian was standing
-#      - time: A variable denoting the time that has passed in seconds
-#      - id: The name of the pedestrian
-data <- lapply(seq_along(trace), 
-               \(i) sapply(trace[[i]]$agents, 
-                           \(y) c(predped::id(y), 
-                                  predped::position(y))) %>% 
-                   t() %>% 
-                   as.data.frame() %>% 
-                   setNames(c("id", "x", "y")) %>% 
-                   cbind(time = (i - 1)/10) %>% 
-                   select(time, id:y))
+    return(data)
+}
+
+# Carry out the simulation in parallel
+n_cores <- parallel::detectCores()
+data <- parallel::mclapply(seq_along(seeds), 
+                           \(x) simulate_data(x),
+                           mc.cores = getOption("mc.cores", n_cores - 1))
+
 data <- do.call("rbind", data)
-
-# Make sure everything is in the correct format
-data <- data %>% 
-    dplyr::mutate(x = as.numeric(x), 
-                  y = as.numeric(y), 
-                  time = as.numeric(time))
 
 # Save these data
 data.table::fwrite(data, file.path("data", "synthetic", "synthetic_original.csv"))
