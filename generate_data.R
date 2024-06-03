@@ -94,8 +94,7 @@ simulate_data <- function(x) {
                                time_step = 1 / 10,
                                goal_number = 1000, 
                                goal_duration = 10, 
-                               order_goal_stack = FALSE,
-                               report = FALSE)
+                               order_goal_stack = FALSE)
     
     # Load the data and transform to a dataframe. Save this dataframe as being the 
     # "real data". These data will have the following columns: 
@@ -219,13 +218,16 @@ data <- list(data.table::fread(file.path("data", "synthetic", "synthetic_unrelat
 
 # Determine which iterations you will delete. Number of deletions will impose a 
 # mean sampling rate of 6Hz across different people
-set.seed(313) # 3's & 7's - Queens of the Stone Age
-N <- nrow(data[[1]])
-idx <- sample(1:N, round(0.4 * N))
+sample_idx <- \(x) sample(seq_along(x), 
+                          round(0.6 * length(x)))
 
-# Apply this to the data
+set.seed(313) # 3's & 7's - Queens of the Stone Age
 data <- lapply(data, 
-               \(x) x[-idx,])
+               \(x) x %>% 
+                   dplyr::group_by(nsim) %>% 
+                   dplyr::mutate(idx = dplyr::row_number() %in% sample_idx(y)) %>% 
+                   dplyr::filter(idx) %>% 
+                   dplyr::select(-idx))
 
 # And save the results
 data.table::fwrite(data[[1]], 
@@ -255,43 +257,59 @@ data <- list(data.table::fread(file.path("data", "synthetic", "synthetic_unrelat
 # the longer problems, then one in which we delete only a single data point 
 # randomly up until as there are as many missing observations for the nonrandom 
 # and the random missing data (created earlier)
-set.seed(9410) # Newsstand Rock (exposition) - Rx Bandits
 N <- nrow(data[[1]])
-idx <- cbind(sample(1:length(unique(data[[1]]$time)),          # Sample time points to delete
-                    round(0.3 * N / 10), replace = TRUE),      # As many as to have about 75% of missing data being in longer blocks
-             sample(unique(data[[1]]$id),                      # Sample participants whose date to delete in unison
-                    round(0.3 * N) / 10, replace = TRUE)) %>%  # As many as there are blocks to delete         
-    as.data.frame() %>% 
-    setNames(c("from", "participants")) %>% 
-    dplyr::mutate(from = as.numeric(from)) %>% 
-    dplyr::mutate(to = from + rep(c(5, 10, 15), each = round(length(from) / 3)))
+impute_missing <- function(x) {
+    # Create relative indices per person for the blocked missing data
+    idx <- cbind(sample(1:length(unique(x$time)),                  # Sample time points to delete
+                        round(0.3 * N / 10), replace = TRUE),      # As many as to have about 75% of missing data being in longer blocks
+                 sample(unique(data[[1]]$id),                      # Sample participants whose date to delete in unison
+                        round(0.3 * N / 10), replace = TRUE)) %>%  # As many as there are blocks to delete         
+        as.data.frame() %>% 
+        setNames(c("from", "participant")) %>% 
+        dplyr::mutate(from = as.numeric(from)) %>% 
+        dplyr::mutate(to = from + rep(c(5, 10, 15) - 1, each = round(length(from) / 3)))
 
-# Delete these time points from the data for each individual separately
-pid <- unique(idx$participants)
-for(i in seq_along(data)) {
-    new_data <- list()
-    for(j in seq_along(pid)) {
-        # Filter data on the participant name
-        individual_data <- dplyr::filter(data[[i]], id == pid[j])
-        idy <- dplyr::filter(idx, participants == pid[j])
+    # Explicate all indices to be deleted
+    idx <- idx %>% 
+        dplyr::rowwise() %>% 
+        dplyr::mutate(indices = multi_seq(from, to) %>% 
+                          as.vector() %>% 
+                          data.frame() %>% 
+                          setNames("indices") %>% 
+                          tidyr::nest()) %>%
+        tidyr::unnest(indices) %>% 
+        tidyr::unnest(data) %>% 
+        dplyr::ungroup() %>% 
+        dplyr::select(-from, -to)
 
-        # And delete the iterations asked for
-        idy <- multi_seq(idy$from, idy$to, by = 1) %>% 
-            unlist()
+    # Delete these indices already in the way that was previously used. 
+    # Importantly, the deletion is relative to the participant, so we have to 
+    # account for the participant in this deletion.
+    x <- x %>% 
+        dplyr::group_by(id) %>% 
+        dplyr::mutate(index = dplyr::row_number() %in% idx$indices[idx$participant == id]) %>%
+        dplyr::filter(!index) %>% 
+        dplyr::select(-index) %>% 
+        dplyr::ungroup()
 
-        new_data[[j]] <- individual_data[-idy,]
-    }
-    data[[i]] <- do.call("rbind", new_data) %>% 
-        dplyr::arrange(time)
-    row.names(data[[i]]) <- NULL
+    # Now sample the remaining time points to be deleted from the remaining data 
+    # points
+    sample_idx <- \(x) sample(seq_along(x), 
+                              round(0.6 * N))
+    x <- x %>% 
+        dplyr::mutate(index = dplyr::row_number() %in% sample_idx(y)) %>% 
+        dplyr::filter(index) %>% 
+        dplyr::select(-index)
+
+    return(x)
 }
 
-# Now sample the remaining time points to be deleted from the remaining data 
-# points
-idx <- sample(1:nrow(data[[1]]), nrow(data[[1]]) - 0.6 * N)
-
+# Delete these time points from the data for each individual separately
+set.seed(9410) # Newsstand Rock (exposition) - Rx Bandits
 data <- lapply(data, 
-               \(x) x[-idx,])
+               \(x) x %>% 
+                   dplyr::group_by(nsim) %>% 
+                   impute_missing())
 
 # And save the results
 data.table::fwrite(data[[1]], 
