@@ -128,6 +128,7 @@ data <- parallel::mclapply(seq_along(seeds),
                            mc.cores = getOption("mc.cores", n_cores - 1))
 
 data <- do.call("rbind", data)
+data$nsim <- rep(seq_along(seeds), each = 9001 * 10)
 
 # Save these data
 data.table::fwrite(data, file.path("data", "synthetic", "synthetic_original.csv"))
