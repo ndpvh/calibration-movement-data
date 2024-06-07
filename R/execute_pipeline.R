@@ -29,6 +29,6 @@ execute_pipeline <- function(data,
         
         data <- fx[[i]](data)
     }
-    cat("\n")
+    # cat("\n")
     return(data)
 }
