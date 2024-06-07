@@ -19,3 +19,8 @@ diana*
 *.png
 .DS_Store
 .vscode/
+
+results/synthetic/conditions.Rds
+results/synthetic/data_list.Rds
+results/synthetic/data_files.csv
+results/synthetic/preprocessed_original.csv
