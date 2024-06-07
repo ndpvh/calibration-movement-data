@@ -29,6 +29,8 @@ data_list <- lapply(data_files,
                                            data.table = FALSE))
 names(data_list) <- data_files
 
+saveRDS(data_list, file.path("results", "synthetic", "data_list.Rds"))
+
 # Add some metadata to these files. This will allow us to quickly distinguish 
 # the different files and compare how effective the preprocessing strategies 
 # are on them.
@@ -43,9 +45,21 @@ data_files <- data.frame(filename = data_files,
 # that lie as close to this one as possible.
 data_original <- data.table::fread(file.path("data", "synthetic", "synthetic_original.csv"), 
                                    data.table = FALSE) %>% 
-    nameless::bin(span = 0.5, 
-                  fx = \(x) nameless::average(x),
-                  .by = "id")
+    dplyr::group_by(nsim) %>% 
+    tidyr::nest() %>% 
+    dplyr::mutate(new_data = data %>% 
+                      as.data.frame() %>% 
+                      nameless::bin(span = 0.5, 
+                                    fx = \(x) nameless::average(x),
+                                    .by = "id") %>% 
+                      tidyr::nest()) %>% 
+    dplyr::select(-data) %>% 
+    tidyr::unnest(new_data) %>% 
+    tidyr::unnest(data) %>% 
+    dplyr::ungroup()
+
+data.table::fwrite(data_original, 
+                   file.path("results", "synthetic", "preprocessed_original.csv"))
 
 # Create several different preprocessing pipelines to be tested. Created 
 # with the following in mind: 
@@ -109,6 +123,9 @@ data_files <- data_files %>%
                   related_error:random_drop,
                   moving_window:by)
 
+data.table::fwrite(data_files, file.path("results", "synthetic", "data_files.csv"))
+saveRDS(conditions, file.path("results", "synthetic", "conditions.Rds"))
+
 
 
 
@@ -116,15 +133,26 @@ data_files <- data_files %>%
 ################################################################################
 # ANALYSIS
 
+# Load the needed variables
+data_original <- data.table::fread(file.path("results", "synthetic", "preprocessed_original.csv"))
+data_files <- data.table::fread(file.path("results", "synthetic", "data_files.csv"))
+conditions <- readRDS(file.path("results", "synthetic", "conditions.Rds"))
+data_list <- readRDS(file.path("results", "synthetic", "data_list.Rds"))
+
+binning <- \(x) nameless::bin(x, span = 0.5, \(x) nameless::average(x), .by = "id")
+moving_2 <- \(x, fx) nameless::moving_window(x, span = 2, fx = fx, .by = "id")
+moving_5 <- \(x, fx) nameless::moving_window(x, span = 5, fx = fx, .by = "id")
+
 # For the analysis, we should first create a function that will do the 
 # preprocessing and check its efficacy. This will allow us to put tidyverse to 
 # its maximal use when preprocessing the data.
-pipeline_efficacy <- function(data_file, 
-                              condition) {
+pipeline_efficacy <- function(x){
+
+    print(paste0(x$filename, ": ", x$condition))
 
     # Retrieve the data and the pipeline for the condition
-    local_data <- data_list[[data_file]]
-    fx <- conditions[[condition]]
+    local_data <- data_list[[x$filename]]
+    fx <- conditions[[x$condition]]
 
     # Check whether the data have a reference to the simulation number. If not, 
     # add it to the dataframe
@@ -139,9 +167,8 @@ pipeline_efficacy <- function(data_file,
         dplyr::mutate(data = data %>%  
                           as.data.frame() %>% 
                           nameless::execute_pipeline(fx) %>% 
-                          tidyr::nest()) %>% 
+                          list()) %>% 
         tidyr::unnest(data) %>% 
-        tidyr::unnest(data) %>%
         dplyr::ungroup()
 
     # Check the efficacy by comparing the values obtained after preprocessing to 
@@ -149,7 +176,7 @@ pipeline_efficacy <- function(data_file,
     local_data <- local_data %>% 
         dplyr::rename(preprocessed_x = x, 
                       preprocessed_y = y) %>% 
-        dplyr::full_join(data_original, by = c("time", "id")) %>% 
+        dplyr::full_join(data_original, by = c("nsim", "time", "id")) %>% 
         dplyr::mutate(difference_x = x - preprocessed_x, 
                       difference_y = y - preprocessed_y)
 
@@ -170,13 +197,16 @@ pipeline_efficacy <- function(data_file,
     return(summary_statistics)
 }
 
+# Define the number of cores to run this on in parallel
+n_cores <- max(c(parallel::detectCores() - 1, 1))
+
 # Execute this function for each combination of the data and the pipeline.
 results <- data_files %>%
-    dplyr::rowwise() %>% 
-    dplyr::mutate(data = pipeline_efficacy(filename, condition) %>% 
-                      tidyr::nest()) %>%
-    tidyr::unnest(data) %>% 
-    tidyr::unnest(data)
+    split(seq_len(nrow(data_files))) %>% 
+    as.list() %>% 
+    parallel::mclapply(pipeline_efficacy, 
+                       mc.cores = n_cores) %>% 
+    dplyr::bind_rows()
 
 data.table::fwrite(results, 
                    file.path("results", "synthetic_preprocessing.csv"))
