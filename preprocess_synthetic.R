@@ -193,6 +193,11 @@ pipeline_efficacy <- function(x){
                       q975_diff_x = quantile(data[[1]]$difference_x, probs = 0.975, na.rm = TRUE),
                       q975_diff_y = quantile(data[[1]]$difference_y, probs = 0.975, na.rm = TRUE)) %>% 
         dplyr::select(-data)
+    
+    # Bind the summary statistics to the information in the data files
+    summary_statistics <- x %>% 
+        dplyr::mutate(data = list(summary_statistics)) %>% 
+        tidyr::unnest(data)
 
     return(summary_statistics)
 }
@@ -202,10 +207,10 @@ n_cores <- max(c(parallel::detectCores() - 1, 1))
 
 # Execute this function for each combination of the data and the pipeline.
 results <- data_files %>%
-    split(seq_len(nrow(data_files))) %>% 
+    split(seq_len(nrow(data_files))) %>%
     as.list() %>% 
-    parallel::mclapply(pipeline_efficacy, 
-                       mc.cores = n_cores) %>% 
+    parallel::mclapply(pipeline_efficacy,
+                       mc.cores = n_cores) %>%
     dplyr::bind_rows()
 
 data.table::fwrite(results, 
