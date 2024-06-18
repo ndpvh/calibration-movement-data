@@ -215,3 +215,95 @@ results <- data_files %>%
 
 data.table::fwrite(results, 
                    file.path("results", "synthetic_preprocessing.csv"))
+
+
+
+
+
+################################################################################
+# VISUALIZATION
+
+# Load the needed file
+results <- data.table::fread(file.path("results", "synthetic_preprocessing.csv"))
+
+# Create a function that will plot distributional histograms for the different 
+# statistics and dimensions
+make_plot <- function(x, 
+                      dim, 
+                      statistic) {
+
+    # Create the column name to be used when selecting data
+    col <- paste0(statistic, 
+                  "_diff_", 
+                  dim)
+
+    # Extract the different data sets and the different preprocessing strategies
+    dataset <- unique(x$filename)
+    preprocess <- unique(x$condition)
+
+    # Get the limits of the plots
+    limits <- x %>% 
+        dplyr::select(as.character(col)) %>% 
+        range(na.rm = TRUE)
+    limits <- limits + c(-1, 1) * diff(limits) * 0.05
+
+    # Loop over these unique names and create the plots. Put these plots in a 
+    # list to be bound together using ggpubr
+    plt <- list()
+    for(i in seq_along(preprocess)) {
+        for(j in seq_along(dataset)) {
+            # Select the data
+            plot_data <- x %>% 
+                dplyr::filter(filename == dataset[j], 
+                              condition == preprocess[i]) %>% 
+                dplyr::select(as.character(col)) %>% 
+                setNames("X")
+
+            # Create the plot
+            idx <- (i - 1) * length(dataset) + j
+            plt[[idx]] <- ggplot2::ggplot(data = plot_data, 
+                                          ggplot2::aes(x = X)) +
+                ggplot2::geom_histogram(fill = "cornflowerblue", 
+                                        bins = 10) +
+                ggplot2::geom_vline(xintercept = 0,
+                                    color = "salmon", 
+                                    linewidth = 2) +
+                ggplot2::labs(title = ifelse(i == 1, dataset[j], " "), 
+                              y = ifelse(j == 1, preprocess[i], " "), 
+                              x = " ") +
+                ggplot2::lims(x = limits) +
+                ggplot2::theme_minimal() +
+                ggplot2::theme(axis.title.y = ggplot2::element_text(size = 15, 
+                                                                    angle = 90, 
+                                                                    vjust = 0.5, 
+                                                                    hjust = 0.5), 
+                               plot.title = ggplot2::element_text(size = 15, 
+                                                                  hjust = 0.5),
+                               axis.text = ggplot2::element_text(size = 10, 
+                                                                 angle = 45, 
+                                                                 hjust = 1))
+        }
+    }
+
+    # Bind together and return the resulting plot
+    plt <- ggpubr::ggarrange(plotlist = plt,
+                             nrow = length(preprocess), 
+                             ncol = length(dataset))
+
+    return(plt)
+}
+
+# Define the dimensions and the statistics
+statistics <- c("mean", "sd", "q025", "q975")
+dims <- c("x", "y")
+
+# Loop over them and save the plots
+for(i in dims) {
+    for(j in statistics) {
+        ggplot2::ggsave(file.path("figures", "synthetic", paste0(j, "_", i, ".jpg")), 
+                        make_plot(results, i, j), 
+                        width = 6 * 500, 
+                        height = 13 * 600, 
+                        unit = "px")
+    }
+}
