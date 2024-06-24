@@ -114,7 +114,6 @@ plot <- function(x,
 # Plot that will use the position data to plot points at those location in the 
 # dataframe.
 plot_point <- function(x, ...) {
-    View(x)
     plt <- ggplot2::ggplot(data = x, 
                            ggplot2::aes(x = x, y = y)) +
         ggplot2::geom_point(...) +
