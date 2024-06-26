@@ -2,7 +2,9 @@
 
 export(average)
 export(bin)
+export(dynamic_filter)
 export(execute_pipeline)
+export(load_data)
 export(moving_window)
 export(plot)
 export(weighted_average)
