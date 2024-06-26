@@ -67,7 +67,16 @@ stationary <- stationary %>%
     # the measured center of the space to X and Y. This will bring their values 
     # closer to the real positions of the tags
     dplyr::mutate(X = X - mean(X) + mean(x), 
-                  Y = Y - mean(Y) + mean(y))
+                  Y = Y - mean(Y) + mean(y)) %>% 
+    # Delete data that consists of only a few observation (within the same 
+    # measuring session)
+    dplyr::group_by(experiment, id) %>% 
+    tidyr::nest() %>% 
+    dplyr::mutate(rows = nrow(as.data.frame(data))) %>% 
+    dplyr::filter(rows > 10) %>% 
+    dplyr::select(-rows) %>% 
+    tidyr::unnest(data) %>% 
+    dplyr::ungroup()
 
 # Visualize the measured position and the real positions
 plot(stationary, 
@@ -125,7 +134,16 @@ stationary <- stationary %>%
     # the measured center of the space to X and Y. This will bring their values 
     # closer to the real positions of the tags
     dplyr::mutate(X = X - mean(X) + mean(x), 
-                  Y = Y - mean(Y) + mean(y))
+                  Y = Y - mean(Y) + mean(y)) %>% 
+    # Delete data that consists of only a few observation (within the same 
+    # measuring session)
+    dplyr::group_by(experiment, id) %>% 
+    tidyr::nest() %>% 
+    dplyr::mutate(rows = nrow(as.data.frame(data))) %>% 
+    dplyr::filter(rows > 10) %>% 
+    dplyr::select(-rows) %>% 
+    tidyr::unnest(data) %>% 
+    dplyr::ungroup()
 
 # Visualize the measured position and the real positions
 plot(stationary, 
@@ -172,16 +190,7 @@ stationary <- data %>%
 # Delete these data first (otherwise all goes wrong)
 stationary <- stationary %>% 
     # Delete data outside of a given bound
-    dplyr::filter(x < 13.5) %>% 
-    # Delete data that consists of only a few observation (within the same 
-    # measuring session)
-    dplyr::group_by(experiment, id) %>% 
-    tidyr::nest() %>% 
-    dplyr::mutate(rows = nrow(as.data.frame(data))) %>% 
-    dplyr::filter(rows > 10) %>% 
-    dplyr::select(-rows) %>% 
-    tidyr::unnest(data) %>% 
-    dplyr::ungroup()
+    dplyr::filter(x < 13.5) 
 
 # Assign X, Y, and id's
 stationary <- stationary %>% 
@@ -194,7 +203,16 @@ stationary <- stationary %>%
     # the measured center of the space to X and Y. This will bring their values 
     # closer to the real positions of the tags
     dplyr::mutate(X = X - mean(X) + mean(x), 
-                  Y = Y - mean(Y) + mean(y))
+                  Y = Y - mean(Y) + mean(y)) %>% 
+    # Delete data that consists of only a few observation (within the same 
+    # measuring session)
+    dplyr::group_by(experiment, id) %>% 
+    tidyr::nest() %>% 
+    dplyr::mutate(rows = nrow(as.data.frame(data))) %>% 
+    dplyr::filter(rows > 10) %>% 
+    dplyr::select(-rows) %>% 
+    tidyr::unnest(data) %>% 
+    dplyr::ungroup()
 
 # Add in information about how many anchors were used to measure these positions.
 six_anchors <- paste0("stationarity ", 1:4, " - 22-12-2023")
