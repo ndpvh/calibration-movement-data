@@ -47,35 +47,12 @@ data_files <- names(data_list)
 #          Importantly, the analysis makes the assumption of independence of 
 #          error across time. This assumption is tested beforehand.
 
+
+
+
+
 #------------------------------------------------------------------------------#
-# Preliminaries
-
-# Create a function that will create bootstrapped data in an efficient way. 
-# Assumption here is that x is a dataframe that contains, among other, the 
-# x and y coordinates that we want to bootstrap.
-#
-# Importantly, it only bootstraps rows: The relationship between x and y remains
-# untouched by this function. This will allow us to not only estimate the 
-# variance components for both dimensions, but also the covariance between them.
-bootstrap_data <- function(x, 
-                           iterations) {
-
-    # Get the sample size of the data. Needed to ensure that each of the samples
-    # has an equal size to the actual data
-    N <- nrow(x)
-
-    # Sample a number of indices for x that is equal to the sample size times 
-    # the number of samples one wants to draw
-    idx <- sample(1:N, 
-                  N * iterations, 
-                  replace = TRUE)
-
-    # Extend the dataframe to account for these values and bind them with an 
-    # identity number that conveys the sample they are in
-    x[idx,] %>% 
-        mutate(sample_id = rep(1:iterations, each = N)) %>% 
-        return()
-}
+# Assumption of time-independence
 
 # Create a function that will compute the autocorrelation for a given variable
 autocorr <- function(x) {
@@ -93,13 +70,6 @@ autocorr <- function(x) {
 
     return(cor(x[2:length(x)], x[2:length(x) - 1]))
 }
-
-
-
-
-
-#------------------------------------------------------------------------------#
-# Assumption of time-independence
 
 # Test the time-independence of the measured positions per experiment per tag
 corrs <- lapply(data_list, 
@@ -238,48 +208,91 @@ results <- parallel::mclapply(data_list,
 #------------------------------------------------------------------------------#
 # Overall measurement error
 
+# Create a function that will create bootstrapped data in an efficient way. 
+# Assumption here is that x is a dataframe that contains, among other, the 
+# x and y coordinates that we want to bootstrap.
+#
+# Importantly, it only bootstraps rows: The relationship between x and y remains
+# untouched by this function. This will allow us to not only estimate the 
+# variance components for both dimensions, but also the covariance between them.
+bootstrapped_covariance <- function(x, 
+                                    iterations,
+                                    vectorized_iterations = 100) {
+
+    # Get the sample size of the data. Needed to ensure that each of the samples
+    # has an equal size to the actual data
+    N <- nrow(x)
+
+    # Determine how many times you will have to run the `vectorized_iterations` 
+    # to attain the `iterations`
+    whole_number <- floor(iterations / vectorized_iterations) 
+    iters <- c(rep(vectorized_iterations, each = whole_number), 
+               iterations %% vectorized_iterations)
+
+    # Remove iterations that are equal to 0 (only the case if 
+    # vectorized_iterations) is a diviser of iterations
+    iters <- iters[iters != 0]
+
+    # Do a mix of vectorized and unvectorized bootstrapping to spare your system's 
+    # memory.
+    results <- list() ; f <- 1
+    for(i in seq_along(iters)) {
+        # Sample a number of indices for x that is equal to the sample size times 
+        # the number of samples one wants to draw
+        idx <- sample(1:N, 
+                      N * iters[i], 
+                      replace = TRUE)
+
+        # Extend the dataframe to account for these values and bind them with an 
+        # identity number that conveys the sample they are in
+        results[[i]] <- x[idx,] %>% 
+            dplyr::mutate(sample_id = rep(f:(f + iters[i] - 1), each = N)) %>% 
+            # Compute the covariances based on the corrected x- and y-positions. 
+            # Importantly, this is done for each separate bootstrapped sample.
+            dplyr::group_by(sample_id) %>% 
+            dplyr::mutate(var_x = var(x), 
+                          var_y = var(y), 
+                          cov_xy = cov(x, y)) %>% 
+            dplyr::ungroup() %>% 
+            # Delete all other information: Only keep variances and covariance
+            dplyr::group_by(sample_id, var_x, var_y, cov_xy) %>% 
+            tidyr::nest() %>% 
+            dplyr::select(-data) %>% 
+            dplyr::ungroup()
+
+        f <- f + iters[i]
+    } 
+    return(do.call("rbind", results))
+}
+
 # Loop over the different dates and do all your estimation 
 set.seed(39) # The Messenger - Thrice
 results <- list()
 for(i in seq_along(data_list)){
+    print(data_files[i])
+
     # Load data from specific date and change it somewhat
     data <- data_list[[i]] %>% 
         # Compute several center statistics, namely mean, median, and mode per
         # tag
-        dplyr::group_by(tag) %>%         
+        dplyr::group_by(id) %>%         
         dplyr::mutate(mu_x = mean(x),
                       mu_y = mean(y),
                       median_x = median(x), 
                       median_y = median(y), 
-                      mode_x = mean(mlv(x, method = "mfv")), 
-                      mode_y = mean(mlv(y, method = "mfv"))) %>% 
+                      mode_x = mean(modeest::mlv(x, method = "mfv")), 
+                      mode_y = mean(modeest::mlv(y, method = "mfv"))) %>% 
         dplyr::ungroup() %>% 
         # Create a "corrected" version of the x- and y-positions using the mean.
         # This one will be used in the estimation of the error covariances.
         #
         # Can be replaced with median or mode too, if desired.
-        dplyr::mutate(corrected_x = x - mu_x, 
-                      corrected_y = y - mu_y)
+        dplyr::mutate(x = x - mu_x, 
+                      y = y - mu_y)
 
     # Bootstrap the data using this function and immediately compute the necessary
     # summary statistics: 2 variances and 1 covariance.
-    #
-    # Be careful, this uses a lot of memory! Currently, 1000 samples is all my 
-    # computer can manage (vectorized). Could consider going for unvectorized at 
-    # a later stage
-    covariances <- bootstrap_data(data, 1000) %>% 
-        # Compute the covariances based on the corrected x- and y-positions. 
-        # Importantly, this is done for each separate bootstrapped sample.
-        dplyr::group_by(sample_id) %>% 
-        dplyr::mutate(var_x = var(corrected_x), 
-                      var_y = var(corrected_y), 
-                      cov_xy = cov(corrected_x, corrected_y)) %>% 
-        dplyr::ungroup() %>% 
-        # Delete all other information: Only keep variances and covariance
-        dplyr::group_by(sample_id, var_x, var_y, cov_xy) %>% 
-        tidyr::nest() %>% 
-        dplyr::select(-data) %>% 
-        dplyr::ungroup() 
+    covariances <- bootstrapped_covariance(data, 10000, vectorized_iterations = 250) 
 
     # Create summary statistics for each of the covariances, and more specifically 
     # given quantiles of the bootstrapped distribution. This should give us an 
@@ -315,58 +328,26 @@ for(i in seq_along(data_list)){
 saveRDS(results, 
         file.path("results", "stationary", "unsystematic_error.Rds"))
 
-# Create histograms of the bootstrapped samples for the covariances and 
-    # save these in the specified location.
-    #
-    # First create a function that will make the plot
-    booted_histogram <- function(col){
-        plot_data <- covariances[, col] %>% 
-            as.data.frame() %>% 
-            setNames(c("X"))
-
-        (ggplot(plot_data, aes(x = X)) +
-            geom_histogram(col = "black", 
-                           fill = "cornflowerblue")) %>% 
-            return()
-    }
-
-    # Make three plots and bind them together
-    plt <- ggarrange(booted_histogram("var_x") +
-                        labs(title = "VAR(X)", 
-                             x = "Bootstrapped value"),
-                     booted_histogram("var_y") +
-                        labs(title = "VAR(Y)", 
-                             x = "Bootstrapped value"),
-                     booted_histogram("cov_xy") +
-                        labs(title = "COV(X,Y)", 
-                             x = "Bootstrapped value"),
-                     nrow = 1)
-
-    # Finally save them
-    ggsave(file.path("figures", 
-                     "calibration", 
-                     "stationary", 
-                     paste0("error_covariance_", stationary[i], ".png")),
-           plot = plt,
-           units = "px",
-           width = 3000, 
-           height = 1300)
-
 # Interpretation of the results: 
 #   - Covariances between x and y are as good as 0, so not relationship in the 
 #     error between both dimensions
-#   - Variances are twice as high for the second calibration period, which might 
-#     suggest that there is more error on the sides than in the center 
-#     (in calibration period 2, only 3 tags were put in the center)
-#   - Worst case scenario -- which is calibration period 2, upper bound of the
-#     99%CI -- there is about 2.25cm of standard error in the x-direction, and
-#     1.80cm of standard error in the y-direction 
-#
-# Additional comments after calibration of 22-12-2023
-#   - Error on this day is a lot bigger. More specifically, the error in standard
-#     deviations is: 
-#       - 4 anchors: 8.7cm (x) and 3.9cm (y)
-#       - 6 anchors: 6.9cm (x) and 8.3cm (y)
+#   - Variances are about: 
+#         - 14-10-2023: x: 99%CI = [0.00020, 0.00022], mean = 0.00021
+#                       y: 99%CI = [0.00018, 0.00020], mean = 0.00019
+#         - 21-10-2023: x: 99%CI = [0.00046, 0.00050], mean = 0.00048
+#                       y: 99%CI = [0.00031, 0.00032], mean = 0.00031
+#         - 22-12-2023: x: 99%CI = [0.00734, 0.00762], mean = 0.00748
+#                       y: 99%CI = [0.00804, 0.00824], mean = 0.00814
+#   - Variances are lowest for the first calibration period (14-10-2023), twice 
+#     as high for the second calibration period (21-10-2023), and highest in the 
+#     third calibration period (22-12-2023). This has some consequences:
+#         - There may be more error on the sides than in the center, as the 
+#           second calibration period only measured the sides
+#         - Either the precision with which you measure depends on the room, or 
+#           something went wrong in the third calibration session
+#   - In the worst case scenario -- which is calibration period 3, upper bound 
+#     of the 99%CI -- there is about 8.73cm of standard error in the x-direction, 
+#     and 9.08cm of standard error in the y-direction 
 
 
 
