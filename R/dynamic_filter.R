@@ -55,9 +55,8 @@ dynamic_filter <- function(data,
             matrix(nrow = 2) %>% 
             mvtnorm::ldmvnorm(mean = y_hat, 
                               chol = C, 
-                              logLik = FALSE) %>% 
-            `*` (-1) %>% 
-            sum(na.rm = TRUE) %>% 
+                              logLik = TRUE) %>% 
+            `*` (-1) %>%
             return()
     }
 
@@ -74,8 +73,8 @@ dynamic_filter <- function(data,
 
         # Do the estimation and extract the results
         params <- DEoptim::DEoptim(\(x) objective_function(y, y_hat, x), 
-                                   lower = rep(-1e5, (nrow(y) - 1) * 2),
-                                   upper = rep(1e5, (nrow(y) - 1) * 2),
+                                   lower = rep(-1e2, (nrow(y) - 1) * 2),
+                                   upper = rep(1e2, (nrow(y) - 1) * 2),
                                    control = DEoptim::DEoptim.control(...))
 
         params$optim$bestmem %>% 
@@ -100,8 +99,7 @@ dynamic_filter <- function(data,
             estimate() %>% 
             as.data.frame() %>% 
             setNames(c("x_filtered", "y_filtered")) %>% 
-            cbind(tmp[2:nrow(tmp),]) %>% 
-            dplyr::select(time:y, x_filtered, y_filtered)
+            cbind(tmp[2:nrow(tmp),])
     }
     cat("\n")
 
