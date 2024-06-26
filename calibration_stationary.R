@@ -6,61 +6,49 @@
 #          the `filter_measurements` function in the "utility" folder.         #
 ################################################################################
 
-source(file.path("utility", "utility.R"))
+################################################################################
+# PRELIMINARIES
 
-# Get the dates of both stationary dataframes, which will be used both for 
-# reading in the data and for saving the results of these data.
-stationary <- c("14-10-2023",
-                "21-10-2023",
-                "4_anchors_22-12-2023",
-                "6_anchors_22-12-2023")
+devtools::load_all()
 
-#-------------------------------------------------------------------------------
-# Some utilities
-#-------------------------------------------------------------------------------
+# Get the data that you want to preprocess.
+data_files <- c("stationary_14-10-2023", 
+                "stationary_21-10-2023",
+                "stationary_22-12-2023")
+data_list <- lapply(data_files, 
+                    \(x) readRDS(file.path("data", "stationary", paste0(x, ".Rds"))))
+names(data_list) <- data_files
 
-# Function that will read in a given stationary dataset. Here, `x` is one of the 
-# two dates contained within the `stationary` vector.
-load_stationary <- function(x){
-    readRDS(file.path("data", 
-                      "calibration",
-                      "stationary",
-                      paste0("preprocessed_stationary_", x, ".Rds"))) %>% 
-        return()
+# Make a distinction between 6 and 4 anchor data
+for(i in c(4, 6)) {
+    idx <- paste0(data_files[3], "_", i)
+    data_list[[idx]] <- data_list[[3]] %>% 
+        dplyr::filter(anchors == i)
 }
 
-# Function that will save the results for a given stationary dataset. Here, `x` 
-# is again one of the dates contained within `stationary`. `name` is the name 
-# you want to give this specific result. Finally, `result` is the thing you want 
-# to save under that name.
-save_result <- function(result, name, x){
-    saveRDS(result, 
-            file.path("results", 
-                      "calibration",
-                      "stationary",
-                      paste0(name, "_", x, ".Rds")))
-}
+# Adjust the data_files vector
+data_files <- names(data_list)
 
 
 
 
 
-#-------------------------------------------------------------------------------
-# Estimating the error variance
-#-------------------------------------------------------------------------------
+################################################################################
+# UNSYSTEMATIC ERROR
 
-# Here, we estimate the error covariances of the tags in the stationary data. 
-# 
-# While deleted in this version of the scripts, we did notice some issues with 
-# the data. More specifically, we found that several parametric assumptions
-# (e.g., normality) do not hold for our data, making it difficult to estimate
-# the error variance in a parametric way. We therefore use a nonparametric way 
-# for estimating the error covariance matrix, which has the following 
-# assumptions:
-#   - The actual measured position is equal to the average of all measured 
-#     positions for a given tag
-#   - The error variance is equal for each of the tags
-#   - Independence of error over time
+# PURPOSE: Estimate the error covariance of the stationary data. For this, we 
+#          use a nonparametric bootstrap of the standard deviation around the 
+#          central measured position (mean, mode, or median).
+#
+#          We have two variations: One for the overall variation across tags, 
+#          and one that is tag-specific. For the second one, we will check whether
+#          the error relates to the position of the tag in space.
+#
+#          Importantly, the analysis makes the assumption of independence of 
+#          error across time. This assumption is tested beforehand.
+
+#------------------------------------------------------------------------------#
+# Preliminaries
 
 # Create a function that will create bootstrapped data in an efficient way. 
 # Assumption here is that x is a dataframe that contains, among other, the 
@@ -69,7 +57,9 @@ save_result <- function(result, name, x){
 # Importantly, it only bootstraps rows: The relationship between x and y remains
 # untouched by this function. This will allow us to not only estimate the 
 # variance components for both dimensions, but also the covariance between them.
-bootstrap_data <- function(x, iterations) {
+bootstrap_data <- function(x, 
+                           iterations) {
+
     # Get the sample size of the data. Needed to ensure that each of the samples
     # has an equal size to the actual data
     N <- nrow(x)
@@ -87,27 +77,189 @@ bootstrap_data <- function(x, iterations) {
         return()
 }
 
+# Create a function that will compute the autocorrelation for a given variable
+autocorr <- function(x) {
+    # If too few data points, skip
+    if(nrow(x) < 3) {
+        return(NA)
+    }
+
+    # Arrange data according to time
+    x <- x %>% 
+        dplyr::arrange(time) %>% 
+        dplyr::select(x) %>% 
+        unlist() %>% 
+        as.numeric()
+
+    return(cor(x[2:length(x)], x[2:length(x) - 1]))
+}
+
+
+
+
+
+#------------------------------------------------------------------------------#
+# Assumption of time-independence
+
+# Test the time-independence of the measured positions per experiment per tag
+corrs <- lapply(data_list, 
+                \(x) x %>% 
+                    dplyr::arrange(experiment, id, time) %>% 
+                    dplyr::group_by(experiment, id) %>% 
+                    tidyr::nest() %>% 
+                    dplyr::mutate(auto_x = purrr::map(data, 
+                                                      \(X) X %>% 
+                                                          dplyr::select(time, x) %>% 
+                                                          setNames(c("time", "x")) %>% 
+                                                          autocorr()), 
+                                  auto_y = purrr::map(data, 
+                                                      \(X) X %>% 
+                                                          dplyr::select(time, y) %>% 
+                                                          setNames(c("time", "x")) %>% 
+                                                          autocorr())) %>% 
+                    dplyr::select(-data))
+names(correlations) <- data_files
+
+# Results: 
+#   There is quite a high autocorrelation, meaning that errors are not 
+#   independent over time. 
+#
+# Consequence: 
+#   In our estimation of the error covariances, we need to account for this 
+#   time dependence
+#
+# How: 
+#   In our approach, we will use the analytic least-squares method to estimate 
+#   the mean, autoregressive component, and the covariance matrix of a simple 
+#   VAR(1) on the data, defined as:
+#
+#       \bm{y}_t = \bm{\alpha} + B \bm{y}_{t - 1} + \bm{\epsilon}_t
+#       \bm{\epsilon}_t \sim N(\bm{0}, \Sigma).
+#
+#   We will then take the mean value for the transition and 
+#   covariance matrix as an approximation for the actual time-dependence and 
+#   random error. This info can then be used to estimate the actual positions 
+#   of the tags at time t as: 
+#
+#       \bm{\mu}_t = \bm{y}_t - B \bm{y}_{t - 1} - \bm{\epsilon}_t
+#       \bm{\epsilon}_t \sim N(\bm{0}, \Sigma),
+#
+#   where the values of \bm{\mu}_t are estimated using the min-log-likelihood.
+#   Note that we use the data to estimate an equal amount of parameters. This 
+#   may not be optimal, but that's left to practice to figure out. Furthermore 
+#   note that while we use the same data sets to estimate the parameters of the 
+#   VAR(1) and the values of \bm{\mu}_t, in the actual data we won't do this, 
+#   but rather use the values that we get from these stationary data to estimate
+#   \bm{\mu}_t
+
+# Let's create a function to estimate the parameters of the VAR(1)
+autoregression <- function(x) {
+    # Arrange the variables according to time
+    x <- x %>% 
+        dplyr::arrange(time)
+
+    # Prepare the variables
+    Y <- x %>% 
+        dplyr::mutate(x = ifelse(time == max(time), NA, x), 
+                      y = ifelse(time == max(time), NA, y)) %>% 
+        dplyr::filter(!is.na(x)) %>% 
+        dplyr::select(x, y) %>% 
+        as.matrix() %>% 
+        t()
+
+    X <- x %>% 
+        dplyr::mutate(x = ifelse(time == min(time), NA, x), 
+                      y = ifelse(time == min(time), NA, y),
+                      intercept = 1) %>% 
+        dplyr::filter(!is.na(x)) %>% 
+        dplyr::select(intercept, x, y) %>% 
+        as.matrix() %>% 
+        t()
+
+    # Do least-squares
+    B <-  Y %*% t(X) %*% solve(X %*% t(X))
+
+    # Compute the residuals of the model and use them to estimate the covariance
+    # matrix.
+    e <- Y - B %*% X
+    S <- cov(t(e))
+
+    # Extract the other parameters and return in a vector
+    return(c(as.vector(B[,2:3]), as.vector(S)))
+}
+
+# Apply the function to each of the data sets
+results <- lapply(data_list, 
+                  \(x) x %>% 
+                      dplyr::group_by(experiment, id) %>% 
+                      dplyr::summarize(experiment = experiment[1], 
+                                       id = id[1],
+                                       data = cbind(x, y, time) %>% 
+                                           as.data.frame() %>% 
+                                           setNames(c("x", "y", "time")) %>% 
+                                           autoregression() %>% 
+                                           t() %>% 
+                                           as.data.frame()) %>% 
+                      tidyr::unnest(data) %>% 
+                      dplyr::ungroup() %>% 
+                      setNames(c("experiment", "id", 
+                                 "auto_x", "cross_yx", "cross_xy", "auto_y", 
+                                 "var_x", "cov_yx", "cov_xy", "var_y")))
+
+# Get the overall quantiles 0.025, 0.50, and 0.975 for each of the parameters
+results <- do.call("rbind", results) %>% 
+    dplyr::select(auto_x:var_y) %>% 
+    as.matrix() %>% 
+    matrixStats::colQuantiles(probs = c(0.025, 0.5, 0.975))
+
+saveRDS(results, 
+        file.path("results", "stationary", "var_params.Rds"))
+
+# As a small (quick) test, check whether the dynamic filtering approach would 
+# work on these stationary data (recovery done in tests, but gives some
+# weird values in the simulated data: This thus serves as a sanity check)
+n_cores <- parallel::detectCores()
+results <- parallel::mclapply(data_list, 
+                              \(x) equilibrium_filter(x, 
+                                                      itermax = 1e3,
+                                                      NP = 2000,
+                                                      trace = TRUE) %>% 
+                                  suppressWarnings(),
+                              mc.cores = n_cores - 1)
+
+# Currently seems to be infeasible due to time and computational constraints, 
+# unfortunately. Way to go seems to be through simple reduction of measurement
+# error. Maybe you could try something else than DEoptim?
+
+
+
+
+
+#------------------------------------------------------------------------------#
+# Overall measurement error
+
 # Loop over the different dates and do all your estimation 
 set.seed(39) # The Messenger - Thrice
-for(i in seq_along(stationary)){
+results <- list()
+for(i in seq_along(data_list)){
     # Load data from specific date and change it somewhat
-    data <- load_stationary(stationary[i]) %>% 
+    data <- data_list[[i]] %>% 
         # Compute several center statistics, namely mean, median, and mode per
         # tag
-        group_by(tag) %>%         
-        mutate(mu_x = mean(x),
-               mu_y = mean(y),
-               median_x = median(x), 
-               median_y = median(y), 
-               mode_x = mean(mlv(x, method = "mfv")), 
-               mode_y = mean(mlv(y, method = "mfv"))) %>% 
-        ungroup() %>% 
+        dplyr::group_by(tag) %>%         
+        dplyr::mutate(mu_x = mean(x),
+                      mu_y = mean(y),
+                      median_x = median(x), 
+                      median_y = median(y), 
+                      mode_x = mean(mlv(x, method = "mfv")), 
+                      mode_y = mean(mlv(y, method = "mfv"))) %>% 
+        dplyr::ungroup() %>% 
         # Create a "corrected" version of the x- and y-positions using the mean.
         # This one will be used in the estimation of the error covariances.
         #
         # Can be replaced with median or mode too, if desired.
-        mutate(corrected_x = x - mu_x, 
-               corrected_y = y - mu_y)
+        dplyr::mutate(corrected_x = x - mu_x, 
+                      corrected_y = y - mu_y)
 
     # Bootstrap the data using this function and immediately compute the necessary
     # summary statistics: 2 variances and 1 covariance.
@@ -118,33 +270,33 @@ for(i in seq_along(stationary)){
     covariances <- bootstrap_data(data, 1000) %>% 
         # Compute the covariances based on the corrected x- and y-positions. 
         # Importantly, this is done for each separate bootstrapped sample.
-        group_by(sample_id) %>% 
-        mutate(var_x = var(corrected_x), 
-               var_y = var(corrected_y), 
-               cov_xy = cov(corrected_x, corrected_y)) %>% 
-        ungroup() %>% 
+        dplyr::group_by(sample_id) %>% 
+        dplyr::mutate(var_x = var(corrected_x), 
+                      var_y = var(corrected_y), 
+                      cov_xy = cov(corrected_x, corrected_y)) %>% 
+        dplyr::ungroup() %>% 
         # Delete all other information: Only keep variances and covariance
-        group_by(sample_id, var_x, var_y, cov_xy) %>% 
+        dplyr::group_by(sample_id, var_x, var_y, cov_xy) %>% 
         tidyr::nest() %>% 
-        select(-data) %>% 
-        ungroup() 
+        dplyr::select(-data) %>% 
+        dplyr::ungroup() 
 
     # Create summary statistics for each of the covariances, and more specifically 
     # given quantiles of the bootstrapped distribution. This should give us an 
     # idea of how badly off we are.
     #
     # Here, we use a 99% CI, just to be sure
-    result <- covariances %>% 
+    results[[data_files[i]]] <- covariances %>% 
         # Summarize the different variables into CI and mean
-        summarize(lb_var_x = quantile(var_x, 0.005), 
-                  lb_var_y = quantile(var_y, 0.005),
-                  lb_cov_xy = quantile(cov_xy, 0.005), 
-                  m_var_x = mean(var_x), 
-                  m_var_y = mean(var_y), 
-                  m_cov_xy = mean(cov_xy), 
-                  ub_var_x = quantile(var_x, 0.995), 
-                  ub_var_y = quantile(var_y, 0.995),
-                  ub_cov_xy = quantile(cov_xy, 0.995)) %>% 
+        dplyr::summarize(lb_var_x = quantile(var_x, 0.005), 
+                         lb_var_y = quantile(var_y, 0.005),
+                         lb_cov_xy = quantile(cov_xy, 0.005), 
+                         m_var_x = mean(var_x), 
+                         m_var_y = mean(var_y), 
+                         m_cov_xy = mean(cov_xy), 
+                         ub_var_x = quantile(var_x, 0.995), 
+                         ub_var_y = quantile(var_y, 0.995),
+                         ub_cov_xy = quantile(cov_xy, 0.995)) %>% 
         # Restructure the dataframe to be more useful: Put each of the 
         # covariances as a row, and the lower bounds, mean, and upper bounds 
         # as the columns 
@@ -152,14 +304,18 @@ for(i in seq_along(stationary)){
         matrix(nrow = 3, ncol = 3) %>% 
         as.data.frame() %>% 
         setNames(c("lb", "mean", "ub")) %>% 
-        cbind(covariance = c("var_x", "var_y", "cov_xy"))  
+        cbind(covariance = c("var_x", "var_y", "cov_xy")) 
 
-    # Save these results
-    save_result(result, 
-                "error_covariance", 
-                stationary[i])
+    # Release the memory that is held up by the bootstrapped data and the data 
+    # itself.
+    rm(data, covariances)
+}
 
-    # Create histograms of the bootstrapped samples for the covariances and 
+# Save the results
+saveRDS(results, 
+        file.path("results", "stationary", "unsystematic_error.Rds"))
+
+# Create histograms of the bootstrapped samples for the covariances and 
     # save these in the specified location.
     #
     # First create a function that will make the plot
@@ -195,11 +351,6 @@ for(i in seq_along(stationary)){
            units = "px",
            width = 3000, 
            height = 1300)
-
-    # Release the memory that is held up by the bootstrapped data and the data 
-    # itself.
-    rm(data, covariances, result, plt)
-}
 
 # Interpretation of the results: 
 #   - Covariances between x and y are as good as 0, so not relationship in the 
