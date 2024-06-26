@@ -84,9 +84,12 @@ dynamic_filter <- function(data,
 
     # Now use these two functions to estimate the values of $\bm{\mu}$. Dispatch
     # based on id
-    ids <- unique(data$id)
+    ids <- unique(data$id) %>% 
+        sort()
     results <- list()
     for(i in seq_along(ids)) {
+        cat("\rEstimation for ID ", ids[i])
+
         tmp <- data %>% 
             dplyr::filter(id == ids[i]) %>% 
             dplyr::arrange(time)
@@ -98,6 +101,7 @@ dynamic_filter <- function(data,
             cbind(tmp[2:nrow(tmp),]) %>% 
             dplyr::select(time:y, x_filtered, y_filtered)
     }
+    cat("\n")
 
     results <- do.call("rbind", results)
     return(results)
