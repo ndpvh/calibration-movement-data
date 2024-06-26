@@ -28,8 +28,12 @@ dynamic_filter <- function(data,
                            parameters = NULL,
                            ...) {
     # Preliminaries that are used in the objecive function, but can be 
-    # initialized beforehand. Consists of the parameters to be used based on the 
-    # median of the parameters as estimated on the stationary calibration data
+    # initialized beforehand. Consists of:
+    #   - The parameters to be used, consisting of the autoregressive effect and 
+    #     the lower-triangular Cholesky decomposition of the covariance matrix,
+    #     as required by ldmvnorm
+    #   - The predicted values of the movement y_hat according to these 
+    #     parameters
     if(is.null(parameters)) {
         B <- c(7.77e-1, -1.37e-3, 4.98e-3, 7.85e-1) %>% 
             matrix(nrow = 2, ncol = 2)
@@ -45,12 +49,12 @@ dynamic_filter <- function(data,
     C <- mvtnorm::ltMatrices(C[lower.tri(C, diag = TRUE)], 
                              diag = TRUE)
 
+    # Create a y_hat that will contain the means for the normal distribution
+    y_hat <- t(y[2:nrow(y), ]) - B %*% t(y[2:nrow(y) - 1,])
+
     # Create a local minimization functions in which the values of $\mu$ are 
     # estimated    
     objective_function <- function(y, x) {
-        # Create a y_hat that will contain the means for the normal distribution
-        y_hat <- t(y[2:nrow(y), ]) - B %*% t(y[2:nrow(y) - 1,])
-
         # Compute the min-log-likelihood
         x %>% 
             matrix(nrow = 2) %>% 
@@ -70,7 +74,7 @@ dynamic_filter <- function(data,
             dplyr::arrange(time) %>% 
             dplyr::select(x, y)
 
-        # Do the estimation and extrac the results
+        # Do the estimation and extract the results
         params <- DEoptim::DEoptim(\(x) objective_function(y, x), 
                                    lower = rep(-1e5, (nrow(y) - 1) * 2),
                                    upper = rep(1e5, (nrow(y) - 1) * 2),
