@@ -51,11 +51,10 @@ dynamic_filter <- function(data,
     # estimated    
     objective_function <- function(y, y_hat, x) {
         # Compute the min-log-likelihood
-        x %>% 
-            matrix(nrow = 2) %>% 
-            mvtnorm::ldmvnorm(mean = y_hat, 
-                              chol = C, 
-                              logLik = TRUE) %>% 
+        mvtnorm::ldmvnorm(y_hat, 
+                          mean = matrix(x, nrow = 2), 
+                          chol = C, 
+                          logLik = TRUE) %>% 
             `*` (-1) %>%
             return()
     }
@@ -72,12 +71,19 @@ dynamic_filter <- function(data,
         y_hat <- t(y[2:nrow(y), ]) - B %*% t(y[2:nrow(y) - 1,])
 
         # Do the estimation and extract the results
-        params <- DEoptim::DEoptim(\(x) objective_function(y, y_hat, x), 
-                                   lower = rep(-1e2, (nrow(y) - 1) * 2),
-                                   upper = rep(1e2, (nrow(y) - 1) * 2),
-                                   control = DEoptim::DEoptim.control(...))
+        # params <- DEoptim::DEoptim(\(x) objective_function(y, y_hat, x), 
+        #                            lower = rep(-1e2, (nrow(y) - 1) * 2),
+        #                            upper = rep(1e2, (nrow(y) - 1) * 2),
+        #                            control = DEoptim::DEoptim.control(...))
+        params <- nloptr::nloptr(as.numeric(t(y_hat)), 
+                                 \(x) objective_function(y, y_hat, x), 
+                                 lb = rep(-1e2, (nrow(y) - 1) * 2),
+                                 ub = rep(1e2, (nrow(y) - 1) * 2),
+                                 opts = list("algorithm" = "NLOPT_LN_BOBYQA", 
+                                             ...))
 
-        params$optim$bestmem %>% 
+        # params$optim$bestmem %>% 
+        params$solution %>% 
             matrix(nrow = 2) %>% 
             t() %>% 
             return()

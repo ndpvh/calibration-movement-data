@@ -189,17 +189,24 @@ saveRDS(results,
 # work on these stationary data (recovery done in tests, but gives some
 # weird values in the simulated data: This thus serves as a sanity check)
 n_cores <- parallel::detectCores()
-results <- parallel::mclapply(data_list, 
-                              \(x) equilibrium_filter(x, 
-                                                      itermax = 1e3,
-                                                      NP = 2000,
-                                                      trace = TRUE) %>% 
-                                  suppressWarnings(),
-                              mc.cores = n_cores - 1)
+# results <- parallel::mclapply(data_list, 
+results <- lapply(list(data_list[[1]]),
+                              \(x) dynamic_filter(x, 
+                                                  maxeval = 1e3, 
+                                                  print_level = 1) %>% 
+                                                #   itermax = 1e3,
+                                                #   NP = 2000,
+                                                #   trace = TRUE) %>% 
+                                  suppressWarnings())#,
+                            #   mc.cores = n_cores - 1)
 
 # Currently seems to be infeasible due to time and computational constraints, 
 # unfortunately. Way to go seems to be through simple reduction of measurement
 # error. Maybe you could try something else than DEoptim?
+#
+# -> At this moment, filtering done on the measurement level, but maybe I should 
+#    only filter the residuals. Might give different results. Flagged this 
+#    because values of y_hat are weird in the optimizer
 
 
 
