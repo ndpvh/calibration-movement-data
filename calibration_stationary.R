@@ -360,6 +360,237 @@ saveRDS(results,
 
 
 
+#------------------------------------------------------------------------------#
+# Measurement error per tag
+
+# Loop over the different dates and do all your estimation, but this time 
+# dispatching on the id
+set.seed(7244) # Falling on Deaf Ears - Hail the Sun
+results <- list()
+for(i in seq_along(data_list)){
+    print(data_files[i])
+
+    # Load data from specific date and change it somewhat
+    data <- data_list[[i]] %>% 
+        # Compute several center statistics, namely mean, median, and mode per
+        # tag
+        dplyr::group_by(id) %>%         
+        dplyr::mutate(mu_x = mean(x),
+                      mu_y = mean(y),
+                      median_x = median(x), 
+                      median_y = median(y), 
+                      mode_x = mean(modeest::mlv(x, method = "mfv")), 
+                      mode_y = mean(modeest::mlv(y, method = "mfv"))) %>% 
+        dplyr::ungroup() %>% 
+        # Create a "corrected" version of the x- and y-positions using the mean.
+        # This one will be used in the estimation of the error covariances.
+        #
+        # Can be replaced with median or mode too, if desired.
+        dplyr::mutate(x = x - mu_x, 
+                      y = y - mu_y)
+
+    # Bootstrap the data using this function and immediately compute the necessary
+    # summary statistics: 2 variances and 1 covariance.
+    covariances <- data %>% 
+        dplyr::group_by(experiment, id) %>% 
+        tidyr::nest() %>% 
+        dplyr::mutate(covariance = bootstrapped_covariance(as.data.frame(data), 
+                                                           10000, 
+                                                           vectorized_iterations = 10000) %>% 
+                          list()) %>% 
+        dplyr::select(-data) %>% 
+        tidyr::unnest(covariance) %>% 
+        dplyr::ungroup() 
+
+    # Create summary statistics for each of the covariances, and more specifically 
+    # given quantiles of the bootstrapped distribution. This should give us an 
+    # idea of how badly off we are.
+    #
+    # Here, we use a 99% CI, just to be sure
+    results[[data_files[i]]] <- covariances %>% 
+        # Summarize the different variables into CI and mean
+        dplyr::group_by(experiment, id) %>% 
+        dplyr::summarize(lb_var_x = quantile(var_x, 0.005), 
+                         lb_var_y = quantile(var_y, 0.005),
+                         lb_cov_xy = quantile(cov_xy, 0.005), 
+                         m_var_x = mean(var_x), 
+                         m_var_y = mean(var_y), 
+                         m_cov_xy = mean(cov_xy), 
+                         ub_var_x = quantile(var_x, 0.995), 
+                         ub_var_y = quantile(var_y, 0.995),
+                         ub_cov_xy = quantile(cov_xy, 0.995)) %>% 
+        dplyr::ungroup()
+
+    # Release the memory that is held up by the bootstrapped data and the data 
+    # itself.
+    rm(data, covariances)
+}
+
+# Add the X and Y locations to the dataframes. Needed to be able to infer when 
+# standard errors are the worst
+results <- lapply(seq_along(data_list), 
+                  \(x) data_list[[x]] %>% 
+                      dplyr::group_by(experiment, id) %>% 
+                      dplyr::summarize(X = mean(X), 
+                                       Y = mean(Y), 
+                                       x = mean(x), 
+                                       y = mean(y)) %>% 
+                      dplyr::inner_join(results[[x]]))
+names(results) <- data_files
+
+# Save the results
+saveRDS(results, 
+        file.path("results", "stationary", "unsystematic_error_per_tag.Rds"))
+
+# Visualize the location of the coordinates together with their 99%CI based on 
+# the mean error variance
+error_plot <- function(x, 
+                       title = "",
+                       linewidth = 1,
+                       ...) {
+    # Create polygons that define a circle with center equal to the measured 
+    # position and a radius equal to the distance from the mean to the bounds 
+    # of a 99%CI (computed with the mean error standard deviation)
+    compute_normal <- function(vx, vy, cv, mx, my) {
+        co <- cbind(rep(seq(mx - 5 * sqrt(vx), mx + 5 * sqrt(vx), length.out = 250), 
+                        each = 250),
+                    rep(seq(my - 5 * sqrt(vy), my + 5 * sqrt(vy), length.out = 250), 
+                        times = 250))
+        
+        S <- matrix(c(vx, cv, cv, vy), 
+                    nrow = 2, 
+                    ncol = 2)
+
+        return(cbind(co, 
+                     mvtnorm::dmvnorm(co,
+                                      mean = c(mx, my),
+                                      sigma = S)))
+    }
+
+    plot_data <- x %>% 
+        dplyr::group_by(experiment, id) %>% 
+        dplyr::mutate(data = compute_normal(m_var_x, 
+                                            m_var_y, 
+                                            m_cov_xy, 
+                                            x, 
+                                            y) %>% 
+                          as.data.frame() %>% 
+                          setNames(c("x", "y", "z")) %>% 
+                          dplyr::mutate(z = z / sum(z)) %>% 
+                          list()) %>% 
+        dplyr::select(experiment, id, data) %>% 
+        tidyr::unnest(data) %>% 
+        dplyr::mutate(experiment_id = paste0(experiment, "_", id)) %>% 
+        dplyr::ungroup()
+
+    # Create the plot itself. For some reason, it doesn't want to make the plot
+    # by using geom_contour (most probably because I don't have continuous 
+    # values for z across the whole range of x and y). Therefore all contours 
+    # added in an annotate
+    expid <- unique(plot_data$experiment_id)
+
+    plt <- ggplot2::ggplot()
+    for(i in expid) {
+        tmp <- dplyr::filter(plot_data, experiment_id == i)
+        plt <- plt + 
+            ggplot2::stat_contour(data = tmp, 
+                                  ggplot2::aes(x = x, y = y, z = z),
+                                  color = "black",
+                                  linewidth = linewidth,
+                                  alpha = 1)
+    }
+    plt <- plt +
+        ggplot2::coord_equal() +
+        ggplot2::labs(x = "x", 
+                      y = "y", 
+                      title = title) +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(...)
+
+    return(plt)
+}
+
+plots <- lapply(data_files, 
+                \(x) error_plot(results[[x]], 
+                                title = x, 
+                                linewidth = 0.01,
+                                axis.title = ggplot2::element_text(size = 20),
+                                plot.title = ggplot2::element_text(size = 30,
+                                                                   hjust = 0.5),
+                                panel.border = ggplot2::element_rect(color = "black", 
+                                                                     fill = NA,
+                                                                     linewidth = 2)))
+
+ggplot2::ggsave(file.path("figures", "stationary", "unsystematic_error_per_tag.jpg"), 
+                ggpubr::ggarrange(plotlist = plots,
+                                  ncol = 1),
+                width = 5000, 
+                height = 20000, 
+                unit = "px",
+                limitsize = FALSE)
+
+# Let's do an additionaly analysis: Examine the relationship between the distance
+# of a tag to the center and the error that we observe
+results <- lapply(results, 
+                  \(x) x %>% 
+                      dplyr::mutate(distance_idealized = sqrt((X - mean(X))^2 + (Y - mean(Y))^2), 
+                                    distance_idealized_x = abs(X - mean(X)),
+                                    distance_idealized_y = abs(Y - mean(Y)),
+                                    distance_measured = sqrt((x - mean(x))^2 + (y - mean(y))^2), 
+                                    distance_measured_x = abs(x - mean(x)),
+                                    distance_measured_y = abs(y - mean(y))) %>% 
+                      dplyr::rowwise() %>% 
+                      dplyr::mutate(lb_var = mean(c(lb_var_x, lb_var_y)), 
+                                    m_var = mean(c(m_var_x, m_var_y)),
+                                    ub_var = mean(c(ub_var_x, ub_var_y))) %>% 
+                      dplyr::ungroup())
+
+# Save the results
+saveRDS(results, 
+        file.path("results", "stationary", "unsystematic_error_per_tag.Rds"))
+
+# Create plots of the relationship between each
+dists <- c("distance_idealized", "distance_idealized_x", "distance_idealized_y", 
+           "distance_measured", "distance_measured_x", "distance_measured_y")
+spread <- c("m_var", "m_var_x", "m_var_y", 
+            "m_var", "m_var_x", "m_var_y")
+
+plots <- list() ; f <- 1
+for(i in data_files) {
+    for(j in seq_along(dists)) {
+        plot_data <- results[[i]] %>% 
+            dplyr::select(dists[j], spread[j]) %>% 
+            setNames(c("x", "y"))
+        plots[[f]] <- ggplot2::ggplot(data = plot_data, 
+                                      ggplot2::aes(x = x, 
+                                                   y = y)) +
+            ggplot2::geom_point(size = 4, 
+                                shape = 21, 
+                                color = "cornflowerblue") +
+            ggplot2::labs(title = i,
+                          x = dists[j], 
+                          y = spread[j])
+        f <- f + 1
+    }
+}
+
+ggplot2::ggsave(file.path("figures", "stationary", "unsystematic_error_distance.jpg"), 
+                ggpubr::ggarrange(plotlist = plots, 
+                                  ncol = length(dists), 
+                                  nrow = length(data_files)), 
+                width = 6000, 
+                height = 5500, 
+                unit = "px")
+
+# Interpretation of the results: 
+#   - There is some variation in the unsystematic error per tag
+#   - There is evidence that this variation is related to the position of the 
+#     tag in the grid: The closer to the edges, the greater the measurement 
+#     error (in all datasets), and in the middle there seems to be a problem for
+#     the 22-12-2023 data
+#       - This only seems to be the case slightly, and primarily in the 
+#         y-direction
+
 #-------------------------------------------------------------------------------
 # Sampling rate
 #-------------------------------------------------------------------------------
