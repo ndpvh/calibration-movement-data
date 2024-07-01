@@ -199,7 +199,7 @@ saveRDS(results,
 n_cores <- parallel::detectCores()
 # results <- parallel::mclapply(data_list, 
 results <- lapply(list(data_list[[1]]),
-                              \(x) dynamic_filter(x, 
+                              \(x) equilibrium_filter(x, 
                                                   maxeval = 1e3, 
                                                   print_level = 1) %>% 
                                                 #   itermax = 1e3,
@@ -207,6 +207,11 @@ results <- lapply(list(data_list[[1]]),
                                                 #   trace = TRUE) %>% 
                                   suppressWarnings())#,
                             #   mc.cores = n_cores - 1)
+
+results[[1]] %>% 
+    dplyr::mutate(x = x_filtered, 
+                  y = y_filtered) %>% 
+    plot(per_iteration = FALSE)
 
 # Currently seems to be infeasible due to time and computational constraints, 
 # unfortunately. Way to go seems to be through simple reduction of measurement
