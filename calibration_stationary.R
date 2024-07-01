@@ -1,9 +1,8 @@
 ################################################################################
-# Purpose: Analyze the preprocessed stationary data gathered on 14/10/2023     #
-#          and 21/10/2023. The main goal of this analysis is to inform us on   #
-#          ways to deal with systematic and unsystematic noise in our data.    #
-#          Consequently, the results from this analysis were used to create    #
-#          the `filter_measurements` function in the "utility" folder.         #
+# Purpose: Analyze the preprocessed stationary data gathered on 14/10/2023,    #
+#          21/10/2023, and 22/12/2023. The main goal of this analysis is to    #
+#          inform us on ways to deal with systematic and unsystematic noise in # 
+#          our data.                                                           #
 ################################################################################
 
 ################################################################################
@@ -19,11 +18,20 @@ data_list <- lapply(data_files,
                     \(x) readRDS(file.path("data", "stationary", paste0(x, ".Rds"))))
 names(data_list) <- data_files
 
+# Also read in the data on where the anchors were located for these data.
+files <- c("anchor_position_14-10-2023", 
+           "anchor_position_21-10-2023",
+           "anchor_position_22-12-2023")
+anchor_list <- lapply(files, 
+                      \(x) readRDS(file.path("data", paste0(x, ".Rds"))))
+names(anchor_list) <- data_files
+
 # Make a distinction between 6 and 4 anchor data
 for(i in c(4, 6)) {
     idx <- paste0(data_files[3], "_", i)
     data_list[[idx]] <- data_list[[3]] %>% 
         dplyr::filter(anchors == i)
+    anchor_list[[idx]] <- anchor_list[[3]]
 }
 
 # Adjust the data_files vector
@@ -591,11 +599,191 @@ ggplot2::ggsave(file.path("figures", "stationary", "unsystematic_error_distance.
 #       - This only seems to be the case slightly, and primarily in the 
 #         y-direction
 
-#-------------------------------------------------------------------------------
-# Sampling rate
-#-------------------------------------------------------------------------------
 
-# Here, we estimate the attained sampling rate for our stationary data.
+
+
+
+################################################################################
+# SYSTEMATIC ERROR
+
+# PURPOSE: Here, we estimate a function to filter out systematic distortions in 
+#          the data. We use several different functions to quantify the 
+#          relationship, namely (a) a polynomial and (b) a hyperboloid. For each
+#          of these, we use the supposed positions X, Y as the dependent 
+#          variables and the measured positions x, y as the independent variables.
+#          That way, we can use the parameters we get out of the equations 
+#          immediately.
+
+# Create a function that prepares the data for the polynomial.
+polynomial_data <- function(data, 
+                            n = 1, 
+                            simple = TRUE) {
+    # Extract the dependent variable and make it ready for the estimation
+    Y <- data %>% 
+        dplyr::select(X, Y) %>% 
+        as.matrix()
+
+    # Create the independent variables of the polynomial. Here, we dispatch on 
+    # the kind of polynomial you want to create, as there are two options to 
+    # move forward.
+    #
+    # When `simple == TRUE`, we will create a simple polynomial in which the 
+    # dimensions `x` and `y` are always treated together, so that: 
+    #
+    #   [X, Y] = \sum_{j = 0} B_j [x, y]^j
+    #
+    # Interactions between the dimensions are then captured by the off-diagonal 
+    # elements in the 2 x 2 matrix B_j, which is unique for each degree j.
+    #
+    # Another approach generalizes this polynomial and includes explicit 
+    # interaction effects for each degree, so that: 
+    #
+    #   [X, Y] = \sum_{j = 0, i = 0, i + j \leq n} [\beta_1, \beta_2]_j x^i y^j
+    #
+    # where you use the parameter vector [\beta_1, \beta_2] to scale the scalar
+    # value of the polynomial. This is closer to an actual polynomial approach, 
+    # but comes with a larger number of parameters to estimate
+    if(simple) {
+        # Just select the data `x` and `y` and take them both to the desired power
+        X <- data %>% 
+            dplyr::select(x, y)
+        X <- lapply(seq_len(n), 
+                    \(i) X^i)
+        X <- append(list(as.data.frame(rep(1, nrow(data)))), 
+                    X)
+    } else {
+        # Here, things are somewhat more complicated. First, we make the 
+        # combinations for taking something to a given power and delete those 
+        # combinations that would lead to a degree greater than n. Then, we 
+        # loop over these combinations and take each of the independent variables
+        # to that power.
+        degrees <- cbind(x = rep(0:n, each = n + 1), 
+                         y = rep(0:n, times = n + 1)) %>% 
+            as.data.frame() %>% 
+            dplyr::mutate(degree = x + y) %>% 
+            dplyr::filter(degree <= n) %>% 
+            dplyr::select(-degree)
+
+        X <- lapply(seq_len(nrow(degrees)), 
+                    \(i) data$x^degrees$x[i] * data$y^degrees$y[i])
+    }    
+
+    X <- do.call("cbind", X) %>% 
+        as.matrix()
+
+    return(list("Y" = Y, "X" = X))
+}
+
+# Create a function that will estimate a formula for a polynomial of the n^th 
+# degree. Analytic solution to the least-squares used for this.
+polynomial <- function(data, 
+                       n = 1,
+                       simple = TRUE){
+    # Prepare the data for analyses (i.e., transform to necessary matrices)
+    data <- polynomial_data(data, n = n, simple = simple)
+    X <- data[["X"]]
+    Y <- data[["Y"]]
+
+    # Time to do the actual analysis. Use the analytic solution to the least-
+    # squares formula
+    B <- solve(t(X) %*% X) %*% t(X) %*% Y
+    return(B)
+}
+
+# Standardize the measured and supposed real positions of the tags and do the 
+# polynomial analysis. 
+#
+# Importantly, the kind of standardization that is performed is not the 
+# standard way of doing this. Rather, we want to transform all measured positions 
+# that fall within the measurement space (i.e., the space bounded by the 
+# anchors) to fall within -1 and 1. This will allow us to more readily 
+# translate the calibration on one day to the measurements on another, as 
+# you are not dependent on the actual measurements for the standardization
+# (in contrast to the scaled equivalent of the Z-score). Importantly, the 
+# `minmax_standardize` function does this transformation, as defined in the 
+# utility functions.# 
+# Unfortunately, we don't have the anchors' positions, so we will assume that 
+# they lie at the sides of the "real positions" grid. In reality, this will 
+# probably be off by a few tens of centimeters, but we will have to do 
+# another, more precisely done calibration to combat the issues that this 
+# brings.
+results <- lapply(data_files, 
+                  \(i) data_list[[i]] %>% 
+                      dplyr::mutate(x = normalize_position(x, 
+                                                           min_x = min(anchor_list[[i]]$x), 
+                                                           max_x = max(anchor_list[[i]]$x)), 
+                                    y = normalize_position(y, 
+                                                           min_x = min(anchor_list[[i]]$y), 
+                                                           max_x = max(anchor_list[[i]]$y)), 
+                                    X = normalize_position(X, 
+                                                           min_x = min(anchor_list[[i]]$x), 
+                                                           max_x = max(anchor_list[[i]]$x)), 
+                                    Y = normalize_position(Y, 
+                                                           min_x = min(anchor_list[[i]]$y), 
+                                                           max_x = max(anchor_list[[i]]$y))) %>% 
+                      polynomial(n = 10, simple = FALSE))
+names(results) <- data_files
+
+saveRDS(results, 
+        file.path("results", "stationary", "polynomial_params.Rds"))
+
+# Let's check whether this works
+filtered <- lapply(data_files, 
+                   \(i) data_list[[i]] %>% 
+                       dplyr::mutate(x = normalize_position(x, 
+                                                            min_x = min(anchor_list[[i]]$x), 
+                                                            max_x = max(anchor_list[[i]]$x)), 
+                                     y = normalize_position(y, 
+                                                            min_x = min(anchor_list[[i]]$y), 
+                                                            max_x = max(anchor_list[[i]]$y))) %>% 
+                       polynomial_distortion(results[[i]], n = 10, simple = FALSE) %>% 
+                       dplyr::mutate(x = denormalize_position(x, 
+                                                              min_x = min(anchor_list[[i]]$x), 
+                                                              max_x = max(anchor_list[[i]]$x)), 
+                                     y = denormalize_position(y, 
+                                                              min_x = min(anchor_list[[i]]$y), 
+                                                              max_x = max(anchor_list[[i]]$y))))
+names(filtered) <- data_files
+
+# Create plots
+tmp <- append(data_list, filtered)
+tmp_names <- names(tmp)
+plots <- lapply(seq_along(tmp), 
+                \(x) plot(tmp[[x]], per_iteration = FALSE) + 
+                    ggplot2::labs(title = tmp_names[x]))
+plots <- ggpubr::ggarrange(plotlist = plots, 
+                           nrow = 2, 
+                           ncol = length(data_files))
+
+ggplot2::ggsave(file.path("figures", "stationary", "systematic_error_filtered.jpg"), 
+                plots,                
+                width = 5000, 
+                height = 2200, 
+                unit = "px")
+
+# Interpretation of the results: 
+#   - For all datasets, distortion seems to disappear somewhat, although its 
+#     success varies
+#   - For the 22-12-2023 data, the distortion seems to disappear the least
+
+
+
+
+
+################################################################################
+# OTHER STUFF OF INTEREST
+
+# PURPOSE: Check other things that may be of interest in the stationary 
+#          calibration data. This includes:
+#              - Sampling rate: Will give us an idea of how many datapoints will
+#                               be averaged over when binning the data
+
+
+
+
+
+#------------------------------------------------------------------------------#
+# Sampling rate
 
 # Create a function that will take in the duration, order them according to 
 # size, and then compute the mean difference between each of the durations
@@ -671,179 +859,3 @@ for(i in seq_along(stationary)){
 #   - Sampling with 4 anchors had an effect on the sampling frequency. Need to 
 #     find out how to increase it again.
 
-
-
-
-
-#-------------------------------------------------------------------------------
-# Systematic distortions
-#-------------------------------------------------------------------------------
-
-# Here, we estimate a function to filter out systematic distortions in the data. 
-# We do this by estimating a polynomial on the stationary data and checking
-# the differences between the functions estimated on both days. We have two 
-# major assumption in this analysis, which is: 
-#   - The actual measured position is equal to the average of all measured 
-#     positions for a given tag
-#   - The systematic error in the x- and y-dimensions is independent
-
-
-# Create a function that will output a formula for a polynomial of the degree^th
-# degree with `dependent` as dependent variable and `independent` as the 
-# independent variable.
-polynomial_formula <- function(independent, dependent, degree){
-    # Start with putting the dependent variable against the independent variable
-    polyn <- paste(dependent, "~", independent)
-
-    # Add each term of the polynomial to this string. Should be of the format 
-    # I(x^degree)
-    for(i in 2:degree){
-        polyn <- paste(polyn, "+", "I(",
-                       paste0(independent, "^", i), ")")
-    }
-
-    # Return this string as a formula to be used in `lm`
-    polyn %>% 
-        formula() %>% 
-        return()
-}
-
-# Create a formula that will do the actual estimation, based on data, a dependent 
-# variable, an independent variable, and a degree
-fit_polynomial <- function(data, independent, dependent, degree){
-    polynomial_formula(independent, dependent, 10) %>% 
-        lm(data = data) %>% 
-        summary() %>% 
-        return()
-}
-
-# Create a function that will extract all of the coefficients
-extract_coefficients <- function(x){
-    x$coefficients[,1] %>% 
-        as.numeric() %>% 
-        return()
-}
-
-# As one can predict already: Loop over all stationary data again.
-for(i in seq_along(stationary)){
-    # Load the data for a given date and standardize all data: Measured positions
-    # and supposed real positions. Standardization is performed to make the
-    # function scalable to other data in which the absolute positions are not 
-    # the same as these of the calibration phase.
-    #
-    # Importantly, the kind of standardization that is performed is not the 
-    # standard way of doing this. Rather, we want to transform all measured positions 
-    # that fall within the measurement space (i.e., the space bounded by the 
-    # anchors) to fall within -1 and 1. This will allow us to more readily 
-    # translate the calibration on one day to the measurements on another, as 
-    # you are not dependent on the actual measurements for the standardization
-    # (in contrast to the scaled equivalent of the Z-score). Importantly, the 
-    # `minmax_standardize` function does this transformation, as defined in the 
-    # utility functions.
-    #
-    # Unfortunately, we don't have the anchors' positions, so we will assume that 
-    # they lie at the sides of the "real positions" grid. In reality, this will 
-    # probably be off by a few tens of centimeters, but we will have to do 
-    # another, more precisely done calibration to combat the issues that this 
-    # brings.
-    data <- load_stationary(stationary[i]) %>% 
-        mutate(standardized_x = minmax_standardize(x, 
-                                                   min_x = min(X), 
-                                                   max_x = max(X)), 
-               standardized_y = minmax_standardize(y, 
-                                                   min_x = min(Y), 
-                                                   max_x = max(Y)), 
-               standardized_X = minmax_standardize(X), 
-               standardized_Y = minmax_standardize(Y))
-
-    # Estimate the 10th degree polynomial on the standardized data
-    pars <- list("x" = fit_polynomial(data, 
-                                      "standardized_x", 
-                                      "standardized_X", 
-                                      10),
-                 "y" = fit_polynomial(data, 
-                                      "standardized_y", 
-                                      "standardized_Y", 
-                                      10))
-
-    # Save these results
-    save_result(pars, 
-                "polynomial", 
-                stationary[i])
-                 
-    # Create a dataframe to be used in `correct_distortion` which will 
-    # contain all of the parameters for the separate dimensions
-    result <- cbind("x" = extract_coefficients(pars[["x"]]), 
-          "y" = extract_coefficients(pars[["y"]])) %>% 
-        as.data.frame()
-
-    # Save these parameters as well 
-    save_result(result, 
-                "parameters_polynomial", 
-                stationary[i])
-
-    # Check how well this polynomial is able to correct for the distortion 
-    # in the data.
-    coordinates <- data %>% 
-        ungroup() %>% 
-        select(standardized_x, standardized_y) %>% 
-        correct_distortion(result)
-
-    # Create a plot of the locations for the distorted and the corrected data.
-    #
-    # First, create a function for this
-    location_plot <- function(data, x, y, title){
-        # Create plot data with the string column names `x` and `y`
-        plot_data <- data[, c(x, y)] %>% 
-            as.data.frame() %>% 
-            setNames(c("X", "Y"))
-
-        # Create the plot itself
-        plt <- ggplot(plot_data, 
-                      aes(x = X, y = Y)) +
-            geom_point(size = 2, 
-                       color = "black") +
-            labs(x = "Standardized X", 
-                 y = "Standardized Y", 
-                 title = title)
-
-        return(plt)
-    }
-    
-    # Create and bind the plots of the distorted and corrected data
-    plt <- ggarrange(location_plot(data, 
-                                   "standardized_x", 
-                                   "standardized_y", 
-                                   "Original"), 
-                     location_plot(coordinates, 
-                                   "standardized_x", 
-                                   "standardized_y", 
-                                   "Corrected"),
-                     nrow = 1)
-
-    # Save this plot 
-    ggsave(file.path("figures", 
-                     "calibration", 
-                     "stationary",
-                     paste0("correct_distortion_", stationary[i], ".png")), 
-           plot = plt, 
-           units = "px", 
-           width = 2000, 
-           height = 1200)
-}
-
-# Interpretation of the results: 
-#   - For both datasets, the distortions seems to disappear somewhat
-#   - However, they do still show some distortion of the distances between each 
-#     of the measured tags
-#   - Question: is this a problem in our measurements, or a problem in where we 
-#     put the tags (i.e., is our assumption of the supposed coordinates X and Y 
-#     correct, or did we make a human error here)
-#   - Parameters between the two datasets are similar, though do not match 
-#     exactly. Given that their are more measured positions in the data from 
-#     the 14th of October, we will assume these estimates have a higher power, 
-#     and will use those for the correction of our distortion.
-#
-# Additional comments after calibration on 22-12-2023
-#   - The 4-anchor data is corrected better than the 6-anchor data, but both 
-#     are worse than the 14-10-2023 counterpart.
