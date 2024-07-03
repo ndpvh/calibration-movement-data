@@ -28,6 +28,8 @@ Collate:
     'bin.R'
     'dynamic_filter.R'
     'load_data.R'
+    'normalize_position.R'
+    'polynomial_distortion.R'
 Suggests: 
     fs,
     testthat (>= 3.0.0)
