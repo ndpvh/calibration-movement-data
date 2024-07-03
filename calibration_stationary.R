@@ -200,13 +200,9 @@ n_cores <- parallel::detectCores()
 # results <- parallel::mclapply(data_list, 
 results <- lapply(list(data_list[[1]]),
                               \(x) equilibrium_filter(x, 
-                                                  maxeval = 1e3, 
-                                                  print_level = 1) %>% 
-                                                #   itermax = 1e3,
-                                                #   NP = 2000,
-                                                #   trace = TRUE) %>% 
-                                  suppressWarnings())#,
-                            #   mc.cores = n_cores - 1)
+                                                      maxeval = 1e3, 
+                                                      print_level = 1) %>% 
+                                  suppressWarnings()))
 
 results[[1]] %>% 
     dplyr::mutate(x = x_filtered, 
