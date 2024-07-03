@@ -77,9 +77,9 @@ dynamic_filter <- function(data,
             as.matrix()
 
         # Do the estimation and extract the results
-        # params <- DEoptim::DEoptim(\(x) objective_function(y, y_hat, x), 
-        #                            lower = rep(-1e2, (nrow(y) - 1) * 2),
-        #                            upper = rep(1e2, (nrow(y) - 1) * 2),
+        # params <- DEoptim::DEoptim(\(x) objective_function(y, x), 
+        #                            lower = rep(-1e2, nrow(y) * 2),
+        #                            upper = rep(1e2, nrow(y) * 2),
         #                            control = DEoptim::DEoptim.control(...))
         params <- nloptr::nloptr(rnorm(length(y), mean = as.numeric(y), sd = 0.05), 
                                  \(x) objective_function(y, x), 
@@ -188,9 +188,9 @@ equilibrium_filter <- function(data,
             as.matrix()
 
         # Do the estimation and extract the results
-        # params <- DEoptim::DEoptim(\(x) objective_function(y, y_hat, x), 
-        #                            lower = rep(-1e2, (nrow(y) - 1) * 2),
-        #                            upper = rep(1e2, (nrow(y) - 1) * 2),
+        # params <- DEoptim::DEoptim(\(x) objective_function(y, x), 
+        #                            lower = rep(-1e2, nrow(y) * 2),
+        #                            upper = rep(1e2, nrow(y) * 2),
         #                            control = DEoptim::DEoptim.control(...))
         params <- nloptr::nloptr(rnorm(length(y), mean = as.numeric(y), sd = 0.05), 
                                  \(x) objective_function(y, x), 
