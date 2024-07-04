@@ -66,3 +66,46 @@ weighted_average <- function(data,
 
     return(result)
 }
+
+#' Take the middle observation within a moving window
+#' 
+#' @param data Dataframe that contains the columns `time`, `id`, `x`, and `y`.
+#' 
+#' @return Single-row dataframe with transformed columns `x` and `y`
+#' 
+#' @export
+middle <- function(data, 
+                   cols = NULL) {
+
+    # Get the middle of the time-bin
+    data <- data %>% 
+        dplyr::arrange(time) %>% 
+        dplyr::mutate(index = dplyr::row_number())
+
+    idx <- median(data$index)
+
+    # Dispatch on whether the index is a whole number or not. If it is a whole 
+    # number, we simple take the middle x and y. If it is not a whole number, 
+    # then we take the mean of the two x's and y's that make up the middle of 
+    # the interval
+    if(idx %in% data$index) {
+        result <- data.frame(x = data$x[idx], 
+                             y = data$y[idx])
+    } else {
+        result <- data.frame(x = mean(data$x[c(floor(idx), ceiling(idx))]), 
+                             y = mean(data$y[c(floor(idx), ceiling(idx))]))
+    }
+
+    # Do the same for any other variable that it is asked for
+    if(!is.null(cols)) {
+        for(i in cols) {
+            if(idx %in% data$index) {
+                result[,i] <- data[idx,i]
+            } else {
+                result[,i] <- mean(data[c(floor(idx), ceiling(idx)), i])
+            }
+        }
+    }
+
+    return(result)
+}
