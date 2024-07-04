@@ -140,9 +140,15 @@ data.table::fwrite(data, file.path("data", "synthetic", "synthetic_original.csv"
 ################################################################################
 # MEASUREMENT ERROR
 
-####################################
-# Create a dataset with random measurement error (no relation between the 
-# different dimensions)
+# Introduce measurement error into the data. This is meant to mimick the kind of 
+# measurement error that we find in the data. We distinguish between three types:
+# (a) random and independent across dimensions, (b) random and dependent across
+# dimensions, (c) time-dependent. Of this, the latter is closest to the actual 
+# observations in the calibration data.
+
+#-------------------------------------------------------------------------------
+# Independence across dimensions
+#-------------------------------------------------------------------------------
 
 # Load the original dataset
 data <- data.table::fread(file.path("data", "synthetic", "synthetic_original.csv"), 
@@ -174,9 +180,11 @@ data.table::fwrite(data, file.path("data", "synthetic", "synthetic_unrelated_10.
 
 
 
-####################################
-# Create a dataset with random measurement error (relationship between error 
-# in both dimensions, correlation of 0.25, which is much more than observed)
+
+
+#-------------------------------------------------------------------------------
+# Dependence across dimensions
+#-------------------------------------------------------------------------------
 
 # Load the original dataset
 data <- data.table::fread(file.path("data", "synthetic", "synthetic_original.csv"), 
@@ -207,9 +215,19 @@ data.table::fwrite(data, file.path("data", "synthetic", "synthetic_related_10.cs
 
 
 
-####################################
-# Create unequal time bins by random missingness. Keep a sampling rate of about
-# 6Hz (observed in data)
+
+
+################################################################################
+# SAMPLING FREQUENCY
+
+# Our data often does not have an actual sampling frequency of 10Hz, but it is 
+# ususally lower. Account for this kind of missing data, and the unequal time 
+# intervals that this creates in the data (and which may make our job 
+# difficult). We will retain a sampling frequency of 6Hz.
+
+#-------------------------------------------------------------------------------
+# Random missingness
+#-------------------------------------------------------------------------------
 
 # Load the two measurement error datasets
 data <- list(data.table::fread(file.path("data", "synthetic", "synthetic_unrelated_10.csv"),
@@ -238,9 +256,11 @@ data.table::fwrite(data[[2]],
 
 
 
-####################################
-# Create unequal time bins by nonrandom missingness. Keep a sampling rate of 
-# about 6Hz (observed in the data)
+
+
+#-------------------------------------------------------------------------------
+# Nonrandom missingness
+#-------------------------------------------------------------------------------
 
 # Load the two measurement error datasets
 data <- list(data.table::fread(file.path("data", "synthetic", "synthetic_unrelated_10.csv"),
