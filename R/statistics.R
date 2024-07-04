@@ -37,7 +37,8 @@ average <- function(data,
 #' @export
 weighted_average <- function(data, 
                              weights = \(x) dnorm(x, mean = 0, sd = 1), 
-                             .by = "index") {
+                             .by = "index", 
+                             cols = NULL) {
     
     # Create the weights and normalize them (should sum to 1). Depends on whether
     # the weights are a numeric vector or a function
