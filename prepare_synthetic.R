@@ -191,7 +191,7 @@ data <- data.table::fread(file.path("data", "synthetic", "synthetic_original.csv
                           data.table = FALSE)
 
 # Transform the dataset to include random error. We use a similar approach as 
-# earlier, but no also include correlations. To do this, we first create a 
+# earlier, but now also include correlations. To do this, we first create a 
 # matrix that contains standard deviations on its diagonal, and another matrix 
 # that contains the correlations on its off-diagonal while having 1's on its 
 # diagonal. We then use these matrices to create the covariance matrix, from
@@ -217,6 +217,68 @@ data.table::fwrite(data, file.path("data", "synthetic", "synthetic_related_10.cs
 
 
 
+#-------------------------------------------------------------------------------
+# Time-dependence
+#-------------------------------------------------------------------------------
+
+# Load the original dataset
+data <- data.table::fread(file.path("data", "synthetic", "synthetic_original.csv"), 
+                          data.table = FALSE)
+
+# Here, we will need to create a vector autoregressive model that will account 
+# both for contemporaneous and lagged measurement error. The parameters that 
+# are used here are taken from estimations we did on the stationary calibration 
+# data. The measurement error is added for each experiment and id separately.
+#
+# Start by creating the function that will create the measurement error to be 
+# added to the observations.
+add_residuals <- function(x) {
+    # Create the parameters to be used
+    B <- c(7.77e-1, -1.37e-3, 4.98e-3, 7.85e-1) %>% 
+        matrix(nrow = 2, ncol = 2)
+    S <- c(9.66e-5, 7.25e-7, 7.25e-7, 9.32e-5) %>% 
+        matrix(nrow = 2, ncol = 2)
+
+    # Create a matrix that will contain the residuals and add the initial 
+    # condition
+    residuals <- matrix(0, nrow = nrow(x), ncol = 2)
+    residuals[1,] <- MASS::mvrnorm(1, c(0, 0), S)
+
+    # Loop over and create the other residuals
+    for(i in seq_len(nrow(x) - 1)) {
+        residuals[i + 1,] <- B %*% residuals[i,] + MASS::mvrnorm(1, c(0, 0), S)
+    }
+
+    # Add the residuals to the dataframe and return
+    x %>% 
+        dplyr::arrange(time) %>% 
+        dplyr::mutate(x = x_original + residuals[,1], 
+                      y = y_original + residuals[,2]) %>% 
+        return()
+}
+
+# Actually add the measurement error to the data. As mentioned above, done per 
+# simulation and per tag separately
+set.seed(55) # Sober Exit(s) - Static Dress
+data <- data %>% 
+    dplyr::rename(x_original = x, 
+                  y_original = y) %>% 
+    dplyr::group_by(nsim, id) %>% 
+    tidyr::nest() %>% 
+    dplyr::mutate(data = data %>% 
+                      as.data.frame() %>% 
+                      add_residuals() %>% 
+                      list()) %>% 
+    tidyr::unnest(data) %>% 
+    dplyr::arrange(nsim, time, id)
+
+# Save these data
+data.table::fwrite(data, file.path("data", "synthetic", "synthetic_temporal_10.csv"))
+
+
+
+
+
 ################################################################################
 # SAMPLING FREQUENCY
 
@@ -233,6 +295,8 @@ data.table::fwrite(data, file.path("data", "synthetic", "synthetic_related_10.cs
 data <- list(data.table::fread(file.path("data", "synthetic", "synthetic_unrelated_10.csv"),
                                data.table = FALSE),
              data.table::fread(file.path("data", "synthetic", "synthetic_related_10.csv"),
+                               data.table = FALSE), 
+             data.table::fread(file.path("data", "synthetic", "synthetic_temporal_10.csv"),
                                data.table = FALSE))
 
 # Determine which iterations you will delete. Number of deletions will impose a 
@@ -253,6 +317,8 @@ data.table::fwrite(data[[1]],
                    file.path("data", "synthetic", "synthetic_unrelated_6random.csv"))
 data.table::fwrite(data[[2]], 
                    file.path("data", "synthetic", "synthetic_related_6random.csv"))
+data.table::fwrite(data[[3]], 
+                   file.path("data", "synthetic", "synthetic_temporal_6random.csv"))
 
 
 
@@ -266,6 +332,8 @@ data.table::fwrite(data[[2]],
 data <- list(data.table::fread(file.path("data", "synthetic", "synthetic_unrelated_10.csv"),
                                data.table = FALSE),
              data.table::fread(file.path("data", "synthetic", "synthetic_related_10.csv"),
+                               data.table = FALSE), 
+             data.table::fread(file.path("data", "synthetic", "synthetic_temporal_10.csv"),
                                data.table = FALSE))
 
 # The approach we take here is an easy one, where we draw random time points at 
@@ -337,6 +405,8 @@ data.table::fwrite(data[[1]],
                    file.path("data", "synthetic", "synthetic_unrelated_6nonrandom.csv"))
 data.table::fwrite(data[[2]], 
                    file.path("data", "synthetic", "synthetic_related_6nonrandom.csv"))
+data.table::fwrite(data[[3]], 
+                   file.path("data", "synthetic", "synthetic_temporal_6nonrandom.csv"))
 
 
 
@@ -349,10 +419,13 @@ data.table::fwrite(data[[2]],
 names <- c("synthetic_original", 
            "synthetic_unrelated_10",
            "synthetic_related_10",
+           "synthetic_temporal_10",
            "synthetic_unrelated_6random", 
            "synthetic_related_6random",
+           "synthetic_temporal_6random",
            "synthetic_unrelated_6nonrandom",
-           "synthetic_related_6nonrandom")
+           "synthetic_related_6nonrandom",
+           "synthetic_temporal_6nonrandom")
 
 # Loop over all of these files
 for(i in names) {
