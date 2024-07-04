@@ -91,7 +91,7 @@ bin <- function(data,
 
     # Bind all data together and sort based on time
     data <- do.call("rbind", all_data) %>% 
-        dplyr::select(time:id, x:y) %>% 
+        dplyr::relocate(time:id, x:y) %>% 
         dplyr::arrange(time) %>% 
         as.data.frame()    
 
