@@ -18,26 +18,21 @@ devtools::load_all()
 # PRELIMINARIES
 
 # Get the data that you want to preprocess.
-data_files <- c("synthetic_related_10", 
-                "synthetic_unrelated_10", 
-                "synthetic_related_6random", 
-                "synthetic_related_6nonrandom",
+data_files <- c("synthetic_unrelated_10",
+                "synthetic_related_10",
+                "synthetic_temporal_10",
                 "synthetic_unrelated_6random", 
-                "synthetic_unrelated_6nonrandom")
+                "synthetic_related_6random",
+                "synthetic_temporal_6random",
+                "synthetic_unrelated_6nonrandom",
+                "synthetic_related_6nonrandom",
+                "synthetic_temporal_6nonrandom")
 data_list <- lapply(data_files, 
                     \(x) data.table::fread(file.path("data", "synthetic", paste0(x, ".csv")), 
                                            data.table = FALSE))
 names(data_list) <- data_files
 
 saveRDS(data_list, file.path("results", "synthetic", "data_list.Rds"))
-
-# Add some metadata to these files. This will allow us to quickly distinguish 
-# the different files and compare how effective the preprocessing strategies 
-# are on them.
-data_files <- data.frame(filename = data_files, 
-                         related_error = c(TRUE, FALSE, TRUE, TRUE, FALSE, FALSE), 
-                         sampling_rate = c(10, 10, 6, 6, 6, 6), 
-                         random_drop = c(NA, NA, TRUE, FALSE, TRUE, FALSE))
 
 # Create a dataframe that the others will be compared to. This contains the 
 # original, non-error-containing binned positions of the agents. In an ideal 
@@ -50,7 +45,7 @@ data_original <- data.table::fread(file.path("data", "synthetic", "synthetic_ori
     dplyr::mutate(new_data = data %>% 
                       as.data.frame() %>% 
                       nameless::bin(span = 0.5, 
-                                    fx = \(x) nameless::average(x),
+                                    fx = \(x) nameless::middle(x),
                                     .by = "id") %>% 
                       tidyr::nest()) %>% 
     dplyr::select(-data) %>% 
@@ -63,65 +58,47 @@ data.table::fwrite(data_original,
 
 # Create several different preprocessing pipelines to be tested. Created 
 # with the following in mind: 
-#   - Presence/Absence of a moving-window filtering approach
+#   - Presence/Absence of a moving-window filtering approach (5 datapoints span)
 #   - Counterbalancing moving-window filtering and binning
 #   - Weighted average or normal average in moving-window
-#   - Size of the moving-window (5 or 11 data-points, span = 2 or 5)
 #   - Weighted averages by index or by actual time
-binning <- \(x) nameless::bin(x, span = 0.5, \(x) nameless::average(x), .by = "id")
-moving_2 <- \(x, fx) nameless::moving_window(x, span = 2, fx = fx, .by = "id")
-moving_5 <- \(x, fx) nameless::moving_window(x, span = 5, fx = fx, .by = "id")
+#   - Taking the middle of the bin or the average as the position
+binning <- \(x, fx) nameless::bin(x, span = 0.5, fx = fx, .by = "id")
+moving <- \(x, fx) nameless::moving_window(x, span = 2, fx = fx, .by = "id")
 
-conditions <- list("bin_only" = list(binning), 
+bin_av <- \(x) binning(x, fx = \(x) nameless::average(x))
+bin_mid <-  \(x) binning(x, fx = \(x) nameless::middle(x))
+
+mov_av <- \(x) moving(x, fx = \(x) nameless::average(x))
+mov_idx <- \(x) moving(x, fx = \(x) nameless::weighted_average(x, .by = "index"))
+mov_time <- \(x) moving(x, fx = \(x) nameless::weighted_average(x, .by = "relative_time"))
+
+conditions <- list(# Only binning
+                   "bin_av" = list(bin_av), 
+                   "bin_mid" = list(bin_mid),
+
                    # Moving window with span 2, average
-                   "mov2_av_1" = list(\(x) moving_2(x, fx = \(x) nameless::average(x)), 
-                                      binning), 
-                   "mov2_av_2" = list(binning, 
-                                      \(x) moving_2(x, fx = \(x) nameless::average(x))),
-                   # Moving window with span 5, average
-                   "mov5_av_1" = list(\(x) moving_5(x, fx = \(x) nameless::average(x)), 
-                                      binning), 
-                   "mov5_av_2" = list(binning, 
-                                      \(x) moving_5(x, fx = \(x) nameless::average(x))),
-                   # Moving window with span 2, weighted average on index
-                   "mov2_wav_ind_1" = list(\(x) moving_2(x, fx = \(x) nameless::weighted_average(x, .by = "index")), 
-                                           binning), 
-                   "mov2_wav_ind_2" = list(binning, 
-                                           \(x) moving_2(x, fx = \(x) nameless::weighted_average(x, .by = "index"))),
-                   # Moving window with span 5, weighted average on index
-                   "mov5_wav_ind_1" = list(\(x) moving_5(x, fx = \(x) nameless::weighted_average(x, .by = "index")), 
-                                           binning), 
-                   "mov5_wav_ind_2" = list(binning, 
-                                           \(x) moving_5(x, fx = \(x) nameless::weighted_average(x, .by = "index"))),
-                   # Moving window with span 2, weighted average on time
-                   "mov2_wav_time_1" = list(\(x) moving_2(x, fx = \(x) nameless::weighted_average(x, .by = "relative_time")), 
-                                            binning), 
-                   "mov2_wav_time_2" = list(binning, 
-                                            \(x) moving_2(x, fx = \(x) nameless::weighted_average(x, .by = "relative_time"))),
-                   # Moving window with span 5, weighted average on time
-                   "mov5_wav_time_1" = list(\(x) moving_5(x, fx = \(x) nameless::weighted_average(x, .by = "relative_time")), 
-                                            binning), 
-                   "mov5_wav_time_2" = list(binning, 
-                                            \(x) moving_5(x, fx = \(x) nameless::weighted_average(x, .by = "relative_time"))))
+                   "mov_av-bin_av" = list(mov_av, bin_av),
+                   "bin_av-mov_av" = list(bin_av, mov_av),
+                   "mov_av-bin_mid" = list(mov_av, bin_mid),
+                   "bin_mid-mov_av" = list(bin_mid, mov_av),
 
-# Add some metadata to each of these conditions to be used later
-conditions_metadata <- data.frame(condition = names(conditions),
-                                  moving_window = c(FALSE, rep(TRUE, 12)), 
-                                  span = c(NA, rep(rep(c(2, 5), each = 2), times = 3)), 
-                                  weighted = c(NA, rep(FALSE, 4), rep(TRUE, 8)), 
-                                  by = c(rep(NA, 5), rep(c("index", "relative_time"), each = 4)))
+                   # Moving window with span 2, weighted average on index
+                   "mov_idx-bin_av" = list(mov_idx, bin_av),
+                   "bin_av-mov_idx" = list(bin_av, mov_idx),
+                   "mov_idx-bin_mid" = list(mov_idx, bin_mid),
+                   "bin_mid-mov_idx" = list(bin_mid, mov_idx),
+
+                   # Moving window with span 2, weighted average on time
+                   "mov_time-bin_av" = list(mov_time, bin_av),
+                   "bin_av-mov_time" = list(bin_av, mov_time),
+                   "mov_time-bin_mid" = list(mov_time, bin_mid),
+                   "bin_mid-mov_time" = list(bin_mid, mov_time))
 
 # Combine the information of the conditions with the information on the data
 # itself, matching conditions to data
-data_files <- data_files %>% 
-    dplyr::rowwise() %>% 
-    dplyr::mutate(tidyr::nest(conditions_metadata)) %>% 
-    tidyr::unnest(data) %>%
-    dplyr::ungroup() %>% 
-    dplyr::select(filename, 
-                  condition, 
-                  related_error:random_drop,
-                  moving_window:by)
+data_files <- data.frame(filename = rep(data_files, each = length(conditions)), 
+                         condition = rep(names(conditions), times = length(data_files)))
 
 data.table::fwrite(data_files, file.path("results", "synthetic", "data_files.csv"))
 saveRDS(conditions, file.path("results", "synthetic", "conditions.Rds"))
@@ -134,14 +111,69 @@ saveRDS(conditions, file.path("results", "synthetic", "conditions.Rds"))
 # ANALYSIS
 
 # Load the needed variables
-data_original <- data.table::fread(file.path("results", "synthetic", "preprocessed_original.csv"))
-data_files <- data.table::fread(file.path("results", "synthetic", "data_files.csv"))
+data_original <- list("preprocessed" = data.table::fread(file.path("results", "synthetic", "preprocessed_original.csv"), 
+                                                         data.table = FALSE), 
+                      "original" = data.table::fread(file.path("data", "synthetic", "synthetic_original.csv"), 
+                                                     data.table = FALSE))
+data_files <- data.table::fread(file.path("results", "synthetic", "data_files.csv"), 
+                                data.table = FALSE)
 conditions <- readRDS(file.path("results", "synthetic", "conditions.Rds"))
 data_list <- readRDS(file.path("results", "synthetic", "data_list.Rds"))
 
-binning <- \(x) nameless::bin(x, span = 0.5, \(x) nameless::average(x), .by = "id")
-moving_2 <- \(x, fx) nameless::moving_window(x, span = 2, fx = fx, .by = "id")
-moving_5 <- \(x, fx) nameless::moving_window(x, span = 5, fx = fx, .by = "id")
+binning <- \(x, fx) nameless::bin(x, span = 0.5, fx = fx, .by = "id")
+moving <- \(x, fx) nameless::moving_window(x, span = 2, fx = fx, .by = "id")
+
+bin_av <- \(x) binning(x, fx = \(x) nameless::average(x))
+bin_mid <-  \(x) binning(x, fx = \(x) nameless::middle(x))
+
+mov_av <- \(x) moving(x, fx = \(x) nameless::average(x))
+mov_idx <- \(x) moving(x, fx = \(x) nameless::weighted_average(x, .by = "index"))
+mov_time <- \(x) moving(x, fx = \(x) nameless::weighted_average(x, .by = "relative_time"))
+
+# Create a function in which we will compute the summary statistics of interest
+compute_summary_statistics <- function(data, kind) {
+    data_original[[kind]] %>% 
+        # Add the original dataset into the one it is being compared to and 
+        # give `X` and `Y` as labels for the real positions (similar to 
+        # stationary preprocessing)
+        dplyr::rename(X = x, 
+                      Y = y) %>% 
+        dplyr::full_join(data, by = c("nsim", "time", "id")) %>% 
+
+        # Compute the difference between filtered and expected positions. Used 
+        # to measure the extent to which systematic error is present in the data
+        dplyr::mutate(difference_x = X - x, 
+                      difference_y = Y - y) %>% 
+
+        # Compute the statistics of interest per simulation and id. This 
+        # will allow for a more broad view on where it still might go awry
+        dplyr::group_by(nsim, id) %>% 
+        dplyr::arrange(time) %>% 
+        dplyr::summarize(# Statistics about how close we are to the actual 
+                         # positions
+                         mean_diff_x = mean(difference_x, na.rm = TRUE), 
+                         mean_diff_y = mean(difference_y, na.rm = TRUE), 
+                         q025_diff_x = quantile(difference_x, probs = 0.025, na.rm = TRUE),
+                         q025_diff_y = quantile(difference_y, probs = 0.025, na.rm = TRUE),
+                         q975_diff_x = quantile(difference_x, probs = 0.975, na.rm = TRUE),
+                         q975_diff_y = quantile(difference_y, probs = 0.975, na.rm = TRUE), 
+
+                         # Statistics about the size of the measurement error
+                         # (compared to the actual positions)
+                         sd_diff_x = sd(difference_x, na.rm = TRUE), 
+                         sd_diff_y = sd(difference_y, na.rm = TRUE), 
+                         
+                         # Autocorrelation in the residuals
+                         auto_x = cor(difference_x[2:length(difference_x)], 
+                                      difference_x[2:length(difference_x) - 1],
+                                      use = "pairwise.complete.obs"), 
+                         auto_y = cor(difference_y[2:length(difference_y)], 
+                                      difference_y[2:length(difference_y) - 1], 
+                                      use = "pairwise.complete.obs")) %>% 
+        dplyr::ungroup() %>% 
+        suppressMessages() %>% 
+        return()
+}
 
 # For the analysis, we should first create a function that will do the 
 # preprocessing and check its efficacy. This will allow us to put tidyverse to 
@@ -151,7 +183,8 @@ pipeline_efficacy <- function(x){
     print(paste0(x$filename, ": ", x$condition))
 
     # Retrieve the data and the pipeline for the condition
-    local_data <- data_list[[x$filename]]
+    local_data <- data_list[[x$filename]] %>% 
+        dplyr::filter(time <= 10)
     fx <- conditions[[x$condition]]
 
     # Check whether the data have a reference to the simulation number. If not, 
@@ -159,6 +192,13 @@ pipeline_efficacy <- function(x){
     if(is.null(local_data$nsim)) {
         local_data$nsim <- 1
     }
+
+    # Compute the summary statistics of the data before they are processed 
+    # through the pipeline. This will give us values to compare the results 
+    # to, which is an overall better approach. Add an indicator that tells us 
+    # that this is the original data
+    summary_statistics <- compute_summary_statistics(local_data, "original") %>% 
+        dplyr::mutate(type = "original")
 
     # Execute the pipeline for each data set at hand   
     local_data <- local_data %>% 
@@ -171,28 +211,10 @@ pipeline_efficacy <- function(x){
         tidyr::unnest(data) %>% 
         dplyr::ungroup()
 
-    # Check the efficacy by comparing the values obtained after preprocessing to 
-    # the positions of the original data set
-    local_data <- local_data %>% 
-        dplyr::rename(preprocessed_x = x, 
-                      preprocessed_y = y) %>% 
-        dplyr::full_join(data_original, by = c("nsim", "time", "id")) %>% 
-        dplyr::mutate(difference_x = x - preprocessed_x, 
-                      difference_y = y - preprocessed_y)
-
     # Get some summary statistics from this
-    summary_statistics <- local_data %>% 
-        dplyr::group_by(nsim) %>% 
-        tidyr::nest() %>% 
-        dplyr::mutate(mean_diff_x = mean(data[[1]]$difference_x, na.rm = TRUE), 
-                      mean_diff_y = mean(data[[1]]$difference_y, na.rm = TRUE), 
-                      sd_diff_x = sd(data[[1]]$difference_x, na.rm = TRUE), 
-                      sd_diff_y = sd(data[[1]]$difference_y, na.rm = TRUE), 
-                      q025_diff_x = quantile(data[[1]]$difference_x, probs = 0.025, na.rm = TRUE),
-                      q025_diff_y = quantile(data[[1]]$difference_y, probs = 0.025, na.rm = TRUE),
-                      q975_diff_x = quantile(data[[1]]$difference_x, probs = 0.975, na.rm = TRUE),
-                      q975_diff_y = quantile(data[[1]]$difference_y, probs = 0.975, na.rm = TRUE)) %>% 
-        dplyr::select(-data)
+    summary_statistics <- compute_summary_statistics(local_data, "preprocessed") %>% 
+        dplyr::mutate(type = "preprocessed") %>% 
+        rbind(summary_statistics)
     
     # Bind the summary statistics to the information in the data files
     summary_statistics <- x %>% 
@@ -206,11 +228,12 @@ pipeline_efficacy <- function(x){
 n_cores <- max(c(parallel::detectCores() - 1, 1))
 
 # Execute this function for each combination of the data and the pipeline.
-results <- data_files %>%
-    split(seq_len(nrow(data_files))) %>%
+results <- data_files[1,] %>%
+    split(seq_len(nrow(data_files[1,]))) %>%
     as.list() %>% 
-    parallel::mclapply(pipeline_efficacy,
-                       mc.cores = n_cores) %>%
+    # parallel::mclapply(pipeline_efficacy,
+    #                    mc.cores = n_cores) %>%
+    lapply(pipeline_efficacy) %>% 
     dplyr::bind_rows()
 
 data.table::fwrite(results, 
