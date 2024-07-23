@@ -54,7 +54,7 @@ data_original <- data.table::fread(file.path("data", "synthetic", "synthetic_ori
     dplyr::ungroup()
 
 data.table::fwrite(data_original, 
-                   file.path("results", "synthetic", "preprocessed_original.csv"))
+                   file.path("data", "synthetic", "preprocessed_original.csv"))
 
 # Create several different preprocessing pipelines to be tested. Created 
 # with the following in mind: 
@@ -111,7 +111,7 @@ saveRDS(conditions, file.path("results", "synthetic", "conditions.Rds"))
 # ANALYSIS
 
 # Load the needed variables
-data_original <- list("preprocessed" = data.table::fread(file.path("results", "synthetic", "preprocessed_original.csv"), 
+data_original <- list("preprocessed" = data.table::fread(file.path("data", "synthetic", "preprocessed_original.csv"), 
                                                          data.table = FALSE), 
                       "original" = data.table::fread(file.path("data", "synthetic", "synthetic_original.csv"), 
                                                      data.table = FALSE))
