@@ -20,9 +20,7 @@ diana*
 .DS_Store
 .vscode/
 
-data/synthetic
+data/
+results/
 
-results/synthetic/conditions.Rds
-results/synthetic/data_list.Rds
-results/synthetic/data_files.csv
-results/synthetic/preprocessed_original.csv
+*with bin*
