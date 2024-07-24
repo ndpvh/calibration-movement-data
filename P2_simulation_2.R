@@ -17,44 +17,34 @@ devtools::load_all()
 ################################################################################
 # PRELIMINARIES
 
+#-------------------------------------------------------------------------------
+# Data
+#-------------------------------------------------------------------------------
+
 # Get the data that you want to preprocess.
-data_files <- c("synthetic_unrelated_10",
-                "synthetic_related_10",
-                "synthetic_temporal_10",
-                "synthetic_unrelated_6random", 
-                "synthetic_related_6random",
-                "synthetic_temporal_6random",
-                "synthetic_unrelated_6nonrandom",
-                "synthetic_related_6nonrandom",
-                "synthetic_temporal_6nonrandom")
+data_files <- c("data_R10",
+                "data_U10",
+                "data_T10",
+                "data_R6R", 
+                "data_U6R",
+                "data_T6R",
+                "data_R6N",
+                "data_U6N",
+                "data_T6N")
 data_list <- lapply(data_files, 
-                    \(x) data.table::fread(file.path("data", "synthetic", paste0(x, ".csv")), 
+                    \(x) data.table::fread(file.path("data", "simulation_2", paste0(x, ".csv")), 
                                            data.table = FALSE))
 names(data_list) <- data_files
 
-saveRDS(data_list, file.path("results", "synthetic", "data_list.Rds"))
+saveRDS(data_list, file.path("results", "simulation_2", "data_list.Rds"))
 
-# Create a dataframe that the others will be compared to. This contains the 
-# original, non-error-containing binned positions of the agents. In an ideal 
-# scenario, the error-containing data sets should provide values of the positions
-# that lie as close to this one as possible.
-data_original <- data.table::fread(file.path("data", "synthetic", "synthetic_original.csv"), 
-                                   data.table = FALSE) %>% 
-    dplyr::group_by(nsim) %>% 
-    tidyr::nest() %>% 
-    dplyr::mutate(new_data = data %>% 
-                      as.data.frame() %>% 
-                      nameless::bin(span = 0.5, 
-                                    fx = \(x) nameless::middle(x),
-                                    .by = "id") %>% 
-                      tidyr::nest()) %>% 
-    dplyr::select(-data) %>% 
-    tidyr::unnest(new_data) %>% 
-    tidyr::unnest(data) %>% 
-    dplyr::ungroup()
 
-data.table::fwrite(data_original, 
-                   file.path("data", "synthetic", "preprocessed_original.csv"))
+
+
+
+#-------------------------------------------------------------------------------
+# Pipelines (TBD)
+#-------------------------------------------------------------------------------
 
 # Create several different preprocessing pipelines to be tested. Created 
 # with the following in mind: 
@@ -100,8 +90,8 @@ conditions <- list(# Only binning
 data_files <- data.frame(filename = rep(data_files, each = length(conditions)), 
                          condition = rep(names(conditions), times = length(data_files)))
 
-data.table::fwrite(data_files, file.path("results", "synthetic", "data_files.csv"))
-saveRDS(conditions, file.path("results", "synthetic", "conditions.Rds"))
+data.table::fwrite(data_files, file.path("results", "simulation_2", "data_files.csv"))
+saveRDS(conditions, file.path("results", "simulation_2", "conditions.Rds"))
 
 
 
