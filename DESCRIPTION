@@ -28,6 +28,7 @@ Collate:
     'moving_window.R'
     'bin.R'
     'dynamic_filter.R'
+    'kalman_filter.R'
     'load_data.R'
     'normalize_position.R'
     'polynomial_distortion.R'
