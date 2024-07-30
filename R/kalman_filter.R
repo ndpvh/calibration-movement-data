@@ -128,9 +128,7 @@ kalman_filter_individual <- function(data,
         dplyr::select(-x, -y) %>% 
         dplyr::full_join(smoothed_y, by = "time") %>% 
         dplyr::select(time, x, y)
-
-    browser()
-
+        
     return(data)
     
 }
