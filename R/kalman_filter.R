@@ -279,13 +279,10 @@ constant_velocity <- function(data,
     # Define the process noise as the Random Acceleration process noise
     # (see Saho (2018)). Also depends on the data and on an arbitrary value 
     # to be given for the variance that is expected. Here, we use the empirical
-    # value of the acceleration variation.
-    var_q <- sqrt(diff(y$x)^2 + diff(y$y)^2) %>% 
-        diff() %>% 
-        var()
-
+    # value of the acceleration variation and correct for the measurement error
+    # that we have on the positions.
     var_q <- c(y$x[y$original] %>% diff() %>% diff() %>% var(),
-               y$y[y$original] %>% diff() %>% diff() %>% var()) - 0.031^2
+               y$y[y$original] %>% diff() %>% diff() %>% var()) - 3 * 0.031^2
     var_q <- ifelse(var_q <= 1e-6, 1e-6, var_q)
 
     W <- function(Delta_t) {
