@@ -23,4 +23,7 @@ diana*
 data/
 results/
 
+*/dynamic_filter.*
+*/*/*dynamic_filter.*
+
 *with bin*
