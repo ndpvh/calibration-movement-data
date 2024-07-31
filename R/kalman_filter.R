@@ -160,9 +160,11 @@ kf_predict <- function(x,
     # matrices. For this, use and predict values of the Cholesky decomposition 
     # and use the R matrix of a QR decomposition to update this Cholesky.
     x <- A %*% x + B %*% u
-    F <- rbind(F %*% t(A), W) %>% 
-        qr() %>% 
-        qr.R()
+    # F <- rbind(F %*% t(A), W) %>% 
+    #     qr() %>% 
+    #     qr.R()
+    F <- (A %*% t(F) %*% F %*% t(A) + W) %>% 
+        chol()
 
     return(list("x" = matrix(x, ncol = 1), 
                 "F" = F))
@@ -236,7 +238,8 @@ constant_velocity <- function(data,
         dplyr::select(time, x, y) %>% 
         dplyr::arrange(time) %>% 
         dplyr::mutate(index = dplyr::row_number(), 
-                      Delta_t = c(0, time[2:length(time)] - time[2:length(time) - 1]))
+                      Delta_t = c(0, time[2:length(time)] - time[2:length(time) - 1]), 
+                      original = TRUE)
 
     # If you want to smooth the data forwards and backwards, add the reversed 
     # data to `y`
@@ -246,7 +249,8 @@ constant_velocity <- function(data,
             dplyr::arrange(time) %>% 
             dplyr::mutate(index = dplyr::row_number()) %>% 
             dplyr::arrange(desc(time)) %>% 
-            dplyr::mutate(Delta_t = c(0, time[2:length(time)] - time[2:length(time) - 1]))
+            dplyr::mutate(Delta_t = c(0, time[2:length(time)] - time[2:length(time) - 1]),
+                          original = FALSE)
 
         y <- rbind(reversed_y, dplyr::filter(y, Delta_t != 0))
         y$original <- c(rep(FALSE, nrow(data) - 1),
@@ -259,43 +263,45 @@ constant_velocity <- function(data,
 
     # Create the transition matrix A, which depends on the data
     A <- function(Delta_t) {
-        c(1, 0, Delta_t, 0,
-          0, 1, 0, Delta_t,
-          0, 0, 1, 0, 
-          0, 0, 0, 1) %>% 
-            matrix(nrow = 4, ncol = 4, byrow = TRUE) %>% 
+        c(1, 0, Delta_t, 0, Delta_t^2 / 2, 0,
+          0, 1, 0, Delta_t, 0, Delta_t^2 / 2,
+          0, 0, 1, 0, Delta_t, 0,
+          0, 0, 0, 1, 0, Delta_t, 
+          0, 0, 0, 0, 1, 0, 
+          0, 0, 0, 0, 0, 1) %>% 
+            matrix(nrow = 6, ncol = 6, byrow = TRUE) %>% 
             return()
     }
 
     # Create B, which in this case is empty
-    B <- matrix(0, nrow = 4, ncol = 1)
+    B <- matrix(0, nrow = 6, ncol = 1)
 
     # Define the process noise as the Random Acceleration process noise
     # (see Saho (2018)). Also depends on the data and on an arbitrary value 
-    # to be given for the variance that is expected. Here, we assume small 
-    # process noise (here 0.0001). 
-    W <- function(Delta_t) {
-        # c(Delta_t^4 / 4, 0, Delta_t^3 / 2, 0, 
-        #   0, Delta_t^4 / 4, 0, Delta_t^3 / 2, 
-        #   Delta_t^3 / 2, 0, Delta_t^2, 0, 
-        #   0, Delta_t^3 / 2, 0, Delta_t^2) %>% 
-        #     `*` (1) %>% 
-        diag(4) %>% 
-            `*` (1e-6) %>% 
-            chol() %>% 
-            return()
+    # to be given for the variance that is expected. Here, we use the empirical
+    # value of the acceleration variation.
+    var_q <- sqrt(diff(y$x)^2 + diff(y$y)^2) %>% 
+        diff() %>% 
+        var()
 
-        #     matrix(nrow = 4, ncol = 4, byrow = TRUE) -> tmp
-        
-        # View(tmp)
-        # tmp %>% 
-        #     chol() %>% 
-        #     return()
+    var_q <- c(y$x[y$original] %>% diff() %>% diff() %>% var(),
+               y$y[y$original] %>% diff() %>% diff() %>% var()) - 0.031^2
+    var_q <- ifelse(var_q <= 1e-6, 1e-6, var_q)
+
+    W <- function(Delta_t) {
+        c(Delta_t^4 * var_q[1] / 4, 0, Delta_t^3 * var_q[1] / 2, 0, 0, 0,
+          0, Delta_t^4 * var_q[2] / 4, 0, Delta_t^3 * var_q[2] / 2, 0, 0,
+          Delta_t^3 * var_q[1] / 2, 0, Delta_t^2 * var_q[1], 0, 0, 0,
+          0, Delta_t^3 * var_q[2] / 2, 0, Delta_t^2 * var_q[2], 0, 0,
+          0, 0, 0, 0, var_q[1], 0,
+          0, 0, 0, 0, 0, var_q[2]) %>% 
+            matrix(nrow = 6, ncol = 6) %>% 
+            return()
     }
 
     # Create the measurement matrix H. Only positions x and y are measured
-    H <- c(1, 0, 0, 0, 
-           0, 1, 0, 0) %>% 
+    H <- c(1, 0, 0, 0, 0, 0,
+           0, 1, 0, 0, 0, 0) %>% 
         matrix(nrow = 2, byrow = TRUE)
 
     # Define the measurement error covariances
@@ -306,9 +312,13 @@ constant_velocity <- function(data,
     x0 <- c(mean(data$x, na.rm = TRUE), 
             mean(data$y, na.rm = TRUE),
             mean(diff(data$x), na.rm = TRUE),
-            mean(diff(data$y), na.rm = TRUE)) %>% 
+            mean(diff(data$y), na.rm = TRUE),
+            mean(diff(diff(data$x)), na.rm = TRUE), 
+            mean(diff(diff(data$y)), na.rm = TRUE)) %>% 
         matrix(ncol = 1)
-    F0 <- cov(cbind(data$x, data$y, c(0, diff(data$x)), c(0, diff(data$y))), 
+    F0 <- cov(cbind(data$x, data$y, 
+                    c(0, diff(data$x)), c(0, diff(data$y)),
+                    c(0, 0, diff(diff(data$x))), c(0, 0, diff(diff(data$y)))), 
               use = "pairwise.complete.obs") %>% 
         chol()
 
