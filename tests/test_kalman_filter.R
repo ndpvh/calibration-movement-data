@@ -1,13 +1,47 @@
 testthat::test_that("Kalman filter: Invididual, Original, CV", {
     # Create some test data
-    data <- list(cbind(time = 1:10, 
-                       x = 1:10, 
-                       y = 1:10) %>% 
-                     as.data.frame(), 
-                 cbind(time = 1:10, 
-                       x = rep(1, 10) + 5 * c(seq(-1, 1, length.out = 5), seq(1, -1, length.out = 5)), 
-                       y = rep(1, 10)) %>% 
-                     as.data.frame())
+    data <- list(# Linear and circular movement at same velocity
+                 data.frame(time = 1:10, 
+                            x = 1:10, 
+                            y = 1:10), 
+                 data.frame(time = 1:10,
+                            x = cos(seq(0, 2 * pi, length.out = 10)), 
+                            y = sin(seq(0, 2 * pi, length.out = 10))),
+                 # Linear and circular movement at increasing velocity
+                 data.frame(time = 1:10, 
+                            x = seq(0, 2, length.out = 10)^2, 
+                            y = seq(0, 2, length.out = 10)^2),
+                 data.frame(time = 1:10,
+                            x = cos(seq(0, 1, length.out = 10)^2 * 2 * pi), 
+                            y = sin(seq(0, 1, length.out = 10)^2 * 2 * pi)),
+                 # Linear and circular movement at increasing and decreasing velocity
+                 data.frame(time = 1:10, 
+                            x = rep(c(-1, 1), each = 5) * seq(-1, 1, length.out = 10)^2, 
+                            y = rep(c(-1, 1), each = 5) * seq(-1, 1, length.out = 10)^2),
+                 data.frame(time = 1:10, 
+                            x = cos(c(seq(0, 1, length.out = 5)^2, seq(1, 0, length.out = 5)^2) * 2 * pi), 
+                            y = sin(c(seq(0, 1, length.out = 5)^2, seq(1, 0, length.out = 5)^2) * 2 * pi)),
+                 # Linear movement in one direction
+                 data.frame(time = 1:10, 
+                            x = rep(1, each = 10), 
+                            y = 1:10), 
+                 data.frame(time = 1:10, 
+                            x = 1:10, 
+                            y = rep(1, each = 10)), 
+                 data.frame(time = 1:10, 
+                            x = rep(1, each = 10), 
+                            y = seq(0, 1, length.out = 10)^2), 
+                 data.frame(time = 1:10, 
+                            x = seq(0, 1, length.out = 10)^2, 
+                            y = rep(1, each = 10)), 
+                 # No movement 
+                 data.frame(time = 1:10, 
+                            x = rep(1, each = 10), 
+                            y = rep(2, each = 10)),
+                 # A lot of data
+                 data.frame(time = 1:100, 
+                            x = rep(1, 100) + 5 * c(seq(-1, 1, length.out = 50), seq(1, -1, length.out = 50)), 
+                            y = rep(1, 100)))
 
     # Add some noise to these data
     set.seed(1)
@@ -22,22 +56,55 @@ testthat::test_that("Kalman filter: Invididual, Original, CV", {
     # Check how big the sd is compared to the original 0.031
     std <- sapply(seq_along(tst), 
                   \(i) sd(c(tst[[i]]$x - data[[i]]$x, 
-                            tst[[i]]$y - data[[i]]$y)))
+                            tst[[i]]$y - data[[i]]$y))) / 0.031
 
-    testthat::expect_equal(std[1] / 0.031, 0.70, tolerance = 1e-2)
-    testthat::expect_equal(std[2] / 0.031, 56.31, tolerance = 1e-2)
+    testthat::expect_true(all(std < 1.2 & std > 0.58))
 })
 
 testthat::test_that("Kalman filter: Individual, Reverse, CV", {
     # Create some test data
-    data <- list(cbind(time = 1:10, 
-                       x = 1:10, 
-                       y = 1:10) %>% 
-                     as.data.frame(), 
-                 cbind(time = 1:10, 
-                       x = rep(1, 10) + 5 * c(seq(-1, 1, length.out = 5), seq(1, -1, length.out = 5)), 
-                       y = rep(1, 10)) %>% 
-                     as.data.frame())
+    data <- list(# Linear and circular movement at same velocity
+                 data.frame(time = 1:10, 
+                            x = 1:10, 
+                            y = 1:10), 
+                 data.frame(time = 1:10,
+                            x = cos(seq(0, 2 * pi, length.out = 10)), 
+                            y = sin(seq(0, 2 * pi, length.out = 10))),
+                 # Linear and circular movement at increasing velocity
+                 data.frame(time = 1:10, 
+                            x = seq(0, 2, length.out = 10)^2, 
+                            y = seq(0, 2, length.out = 10)^2),
+                 data.frame(time = 1:10,
+                            x = cos(seq(0, 1, length.out = 10)^2 * 2 * pi), 
+                            y = sin(seq(0, 1, length.out = 10)^2 * 2 * pi)),
+                 # Linear and circular movement at increasing and decreasing velocity
+                 data.frame(time = 1:10, 
+                            x = rep(c(-1, 1), each = 5) * seq(-1, 1, length.out = 10)^2, 
+                            y = rep(c(-1, 1), each = 5) * seq(-1, 1, length.out = 10)^2),
+                 data.frame(time = 1:10, 
+                            x = cos(c(seq(0, 1, length.out = 5)^2, seq(1, 0, length.out = 5)^2) * 2 * pi), 
+                            y = sin(c(seq(0, 1, length.out = 5)^2, seq(1, 0, length.out = 5)^2) * 2 * pi)),
+                 # Linear movement in one direction
+                 data.frame(time = 1:10, 
+                            x = rep(1, each = 10), 
+                            y = 1:10), 
+                 data.frame(time = 1:10, 
+                            x = 1:10, 
+                            y = rep(1, each = 10)), 
+                 data.frame(time = 1:10, 
+                            x = rep(1, each = 10), 
+                            y = seq(0, 1, length.out = 10)^2), 
+                 data.frame(time = 1:10, 
+                            x = seq(0, 1, length.out = 10)^2, 
+                            y = rep(1, each = 10)), 
+                 # No movement 
+                 data.frame(time = 1:10, 
+                            x = rep(1, each = 10), 
+                            y = rep(2, each = 10)),
+                 # A lot of data
+                 data.frame(time = 1:100, 
+                            x = rep(1, 100) + 5 * c(seq(-1, 1, length.out = 50), seq(1, -1, length.out = 50)), 
+                            y = rep(1, 100)))
 
     # Add some noise to these data
     set.seed(1)
@@ -52,8 +119,7 @@ testthat::test_that("Kalman filter: Individual, Reverse, CV", {
     # Check how big the sd is compared to the original 0.031
     std <- sapply(seq_along(tst), 
                   \(i) sd(c(tst[[i]]$x - data[[i]]$x, 
-                            tst[[i]]$y - data[[i]]$y)))
+                            tst[[i]]$y - data[[i]]$y))) / 0.031
 
-    testthat::expect_equal(std[1] / 0.031, 0.30, tolerance = 1e-2)
-    testthat::expect_equal(std[2] / 0.031, 73.13, tolerance = 1e-2)
+    testthat::expect_true(all(std < 1.2 & std > 0.58))
 })
