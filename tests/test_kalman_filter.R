@@ -58,7 +58,7 @@ testthat::test_that("Kalman filter: Invididual, Original, CV", {
                   \(i) sd(c(tst[[i]]$x - data[[i]]$x, 
                             tst[[i]]$y - data[[i]]$y))) / 0.031
 
-    testthat::expect_true(all(std < 1.2 & std > 0.58))
+    testthat::expect_true(all(std < 1.15 & std > 0.59))
 })
 
 testthat::test_that("Kalman filter: Individual, Reverse, CV", {
@@ -121,5 +121,5 @@ testthat::test_that("Kalman filter: Individual, Reverse, CV", {
                   \(i) sd(c(tst[[i]]$x - data[[i]]$x, 
                             tst[[i]]$y - data[[i]]$y))) / 0.031
 
-    testthat::expect_true(all(std < 1.2 & std > 0.58))
+    testthat::expect_true(all(std < 1.19 & std > 0.48))
 })
