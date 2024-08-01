@@ -131,3 +131,13 @@ testthat::test_that("Kalman filter: Grouped, Reverse, CV", {
 
     testthat::expect_true(all(std < 1.19 & std > 0.48))
 })
+
+testthat::test_that("Kalman filter: Preserves other variables", {
+    bound_data <- do.call("rbind", noisy_data) %>% 
+        dplyr::mutate(another_variable = id)
+
+    # Use the Kalman filter on these data
+    tst <- kalman_filter(bound_data, reverse = TRUE, model = "constant_velocity", .by = "id")
+
+    testthat::expect_true("another_variable" %in% colnames(tst))
+})
