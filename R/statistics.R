@@ -302,11 +302,18 @@ parabola <- function(data,
         x_hat <- c((-b1 + sqrt(D)) / (2 * b2), 
                    (-b1 - sqrt(D)) / (2 * b2))
         x_hat <- x_hat[which.min((x_hat - co[1])^2)]
+
+        # Additional check: If the discriminant is smaller than 0, you can't have 
+        # a good estimate of `x_hat`. If this is the case, just use the original 
+        # coordinate
+        if(D < 0) {
+            x_hat <- co[1]
+        }
     } else {
         # Extract coefficients
         b0 <- lm_x$coefficients[1]
         b1 <- lm_x$coefficients[2]
-        b2 <- lm_y$coefficients[3]
+        b2 <- lm_x$coefficients[3]
 
         # Special case: If the approximation yields no parabola, but rather a linear 
         # line, pass it on to `linear`. This is done so that the functions are a bit
@@ -323,6 +330,13 @@ parabola <- function(data,
         y_hat <- y_hat[which.min((y_hat - co[2])^2)]
 
         x_hat <- b0 + b1 * co[2] + b2 * co[2]^2
+
+        # Additional check: If the discriminant is smaller than 0, you can't have 
+        # a good estimate of `y_hat`. If this is the case, just use the original 
+        # coordinate
+        if(D < 0) {
+            y_hat <- co[2]
+        }
     }
 
     # If the data were rotated, rotate them back now and replace the predicted 
