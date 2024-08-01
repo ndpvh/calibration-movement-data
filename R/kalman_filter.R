@@ -127,7 +127,8 @@ kalman_filter_individual <- function(data,
     data <- data %>% 
         dplyr::select(-x, -y) %>% 
         dplyr::full_join(smoothed_y, by = "time") %>% 
-        dplyr::select(time, x, y)
+        dplyr::select(-Delta_t, -index) %>% 
+        dplyr::relocate(time, x, y)
         
     return(data)
     
