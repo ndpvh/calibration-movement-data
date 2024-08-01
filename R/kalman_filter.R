@@ -22,10 +22,10 @@ kalman_filter <- function(data,
         return(kalman_filter_individual(data, reverse = reverse, model = model))
     } else {
         data %>% 
-            dplyr::group_by(.by) %>% 
+            dplyr::group_by(.dots = .by) %>% 
             tidyr::nest() %>% 
             dplyr::mutate(data = data %>% 
-                unlist() %>% 
+                as.data.frame() %>% 
                 kalman_filter_individual(reverse = reverse, model = model) %>% 
                 list()) %>% 
             tidyr::unnest(data) %>% 
