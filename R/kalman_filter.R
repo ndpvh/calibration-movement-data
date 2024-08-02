@@ -29,6 +29,8 @@ kalman_filter <- function(data,
                 kalman_filter_individual(reverse = reverse, model = model) %>% 
                 list()) %>% 
             tidyr::unnest(data) %>% 
+            dplyr::ungroup() %>% 
+            as.data.frame() %>% 
             return()
     }
 }
@@ -131,7 +133,6 @@ kalman_filter_individual <- function(data,
         dplyr::relocate(time, x, y)
         
     return(data)
-    
 }
 
 #' Predict step in the Kalman filter
