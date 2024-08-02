@@ -33,7 +33,9 @@ moving_window <- function(data,
     # Check whether there is a grouping variable to account for. If not, then 
     # we just use a dummy
     if(!is.null(.by)) {
-        group <- unique(data[,.by])
+        group <- data[,.by] %>% 
+            unique() %>% 
+            as.vector()
     } else {
         group <- 1
     }
