@@ -3,8 +3,6 @@
 export(average)
 export(bin)
 export(denormalize_position)
-export(dynamic_filter)
-export(equilibrium_filter)
 export(execute_pipeline)
 export(kalman_filter)
 export(kalman_filter_individual)
