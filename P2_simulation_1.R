@@ -288,7 +288,7 @@ pipeline_efficacy <- function(x){
         tidyr::nest() %>% 
         dplyr::mutate(data = data %>%  
                           as.data.frame() %>% 
-                          nameless::execute_pipeline(fx) %>% 
+                          nameless::execute_pipeline(fx, report = FALSE) %>% 
                           list()) %>% 
         tidyr::unnest(data) %>% 
         dplyr::ungroup()
