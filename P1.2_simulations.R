@@ -246,7 +246,7 @@ impute_missing <- function(x) {
     N <- nrow(x)
 
     # Create relative indices per person for the blocked missing data
-    idx <- cbind(sample(1:length(unique(x$time)),                  # Sample time points to delete
+    idx <- cbind(sample(1:(length(unique(x$time)) - 15),           # Sample time points to delete (-15 so that you don't get overshoots in deletion)
                         round(0.3 * N / 10), replace = TRUE),      # As many as to have about 75% of missing data being in longer blocks
                  sample(unique(x$id),                              # Sample participants whose date to delete in unison
                         round(0.3 * N / 10), replace = TRUE)) %>%  # As many as there are blocks to delete         
@@ -258,7 +258,7 @@ impute_missing <- function(x) {
     # Explicate all indices to be deleted
     idx <- idx %>% 
         dplyr::rowwise() %>% 
-        dplyr::mutate(indices = multi_seq(from, to) %>% 
+        dplyr::mutate(indices = seq(from, to) %>% 
                           as.vector() %>% 
                           data.frame() %>% 
                           setNames("indices") %>% 
@@ -273,9 +273,15 @@ impute_missing <- function(x) {
     # account for the participant in this deletion.
     x <- x %>% 
         dplyr::group_by(id) %>% 
-        dplyr::mutate(index = dplyr::row_number() %in% idx$indices[idx$participant == id]) %>%
-        dplyr::filter(!index) %>% 
-        dplyr::select(-index) %>% 
+        tidyr::nest() %>% 
+        dplyr::rowwise() %>% 
+        dplyr::mutate(data = data %>%
+            as.data.frame() %>%
+            dplyr::mutate(index = dplyr::row_number() %in% idx$indices[idx$participant == id]) %>%
+            dplyr::filter(!index) %>% 
+            dplyr::select(-index) %>%
+            list()) %>% 
+        tidyr::unnest(data) %>%
         dplyr::ungroup()
 
     # Now sample the remaining time points to be deleted from the remaining data 
@@ -292,13 +298,18 @@ impute_missing <- function(x) {
 
 # Delete these time points from the data for each individual separately
 set.seed(9410) # Newsstand Rock (exposition) - Rx Bandits
-for(i in seq_len(nrow(filenames))) {
+for(i in seq_len(nrow(filenames[1:3,]))) {
     data <- data.table::fread(file.path("data", 
                                         filenames$folder[i], 
                                         paste0(filenames$name[i], ".csv")), 
                               data.table = FALSE) %>% 
         dplyr::group_by(nsim) %>% 
-        impute_missing()
+        tidyr::nest() %>%
+        dplyr::mutate(data = data %>%  
+            as.data.frame() %>%
+            impute_missing() %>%
+            list()) %>%
+        tidyr::unnest(data)
 
     data.table::fwrite(data, 
                        file.path("data",
