@@ -23,12 +23,19 @@
 #' 
 #' @export 
 execute_pipeline <- function(data, 
-                             fx) {
+                             fx,
+                             report = TRUE) {
     for(i in seq_along(fx)) {
-        cat(paste0("\rExecuting function ", i))
+        if(report) {
+            cat(paste0("\rExecuting function ", i))
+        }
         
         data <- fx[[i]](data)
     }
-    # cat("\n")
+
+    if(report) {
+        cat("\n")
+    }
+    
     return(data)
 }
