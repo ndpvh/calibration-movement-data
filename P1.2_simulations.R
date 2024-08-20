@@ -298,7 +298,7 @@ impute_missing <- function(x) {
 
 # Delete these time points from the data for each individual separately
 set.seed(9410) # Newsstand Rock (exposition) - Rx Bandits
-for(i in seq_len(nrow(filenames[1:3,]))) {
+for(i in seq_len(nrow(filenames))) {
     data <- data.table::fread(file.path("data", 
                                         filenames$folder[i], 
                                         paste0(filenames$name[i], ".csv")), 
