@@ -47,6 +47,11 @@ kalman_filter_individual <- function(data,
                                      reverse = TRUE,
                                      model = "constant_velocity") {
 
+    # Robustness against too little data. When there was only 1 row, errors arose
+    if(nrow(data) <= 5) {
+        return(data)
+    }
+
     # Get the model parameters and initial conditions
     parameters <- kalman_models[[model]](data, reverse = reverse)
 
@@ -253,6 +258,9 @@ constant_velocity <- function(data,
             dplyr::arrange(desc(time)) %>% 
             dplyr::mutate(Delta_t = c(0, time[2:length(time)] - time[2:length(time) - 1]),
                           original = FALSE)
+            # dplyr::mutate(index = rev(dplyr::row_number()), 
+            #               Delta_t = c(0, time[2:length(time)] - time[2:length(time) - 1]),
+            #               original = FALSE)
 
         y <- rbind(reversed_y, dplyr::filter(y, Delta_t != 0))
         y$original <- c(rep(FALSE, nrow(data) - 1),
