@@ -319,7 +319,7 @@ results <- data_files %>%
     dplyr::bind_rows()
 
 data.table::fwrite(results, 
-                   file.path("results", "simulation_1" "preprocessing_results.csv"))
+                   file.path("results", "simulation_1", "preprocessing_results.csv"))
 
 
 
