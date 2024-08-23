@@ -18,6 +18,17 @@ devtools::load_all()
 # PRELIMINARIES
 
 #-------------------------------------------------------------------------------
+# Parallellization
+#-------------------------------------------------------------------------------
+
+n_cores <- 3 #max(c(parallel::detectCores() - 1, 1))
+
+
+
+
+
+
+#-------------------------------------------------------------------------------
 # Data
 #-------------------------------------------------------------------------------
 
@@ -182,9 +193,8 @@ conditions <- append(mw_alone,
 
 # Combine the information of the conditions with the information on the data
 # itself, matching conditions to data
-data_files <- data.frame(filename = rep(data_files, each = length(conditions)), 
-                         condition = rep(names(conditions), times = length(data_files)),
-                         original = rep(c("movement", "fixed"), each = length(conditions) * 9))
+data_files <- data.frame(filename = data_files, 
+                         original = rep(c("movement", "fixed"), each = length(data_files)))
 
 data.table::fwrite(data_files, file.path("results", "simulation_1", "data_files.csv"))
 saveRDS(conditions, file.path("results", "simulation_1", "conditions.Rds"))
@@ -262,12 +272,11 @@ compute_summary_statistics <- function(data, kind) {
 # The single argument `x` contains the information on the combination of data set
 # and pipeline that are contained in the variable `data_files`.
 pipeline_efficacy <- function(x){
-
-    print(paste0(x$filename, ": ", x$condition))
-
+    
     # Retrieve the data and the pipeline for the condition
-    local_data <- data_list[[x$filename]] 
-    fx <- conditions[[x$condition]]
+    local_data <- data_list[[x$filename]] %>% 
+        dplyr::filter(time < 2)
+    fx <- names(conditions)
 
     # Check whether the data have a reference to the simulation number. If not, 
     # add it to the dataframe
@@ -278,48 +287,107 @@ pipeline_efficacy <- function(x){
     # Compute the summary statistics of the data before they are processed 
     # through the pipeline. This will give us values to compare the results 
     # to, which is an overall better approach. Add an indicator that tells us 
-    # that this is the original data
-    summary_statistics <- compute_summary_statistics(local_data, x$original) %>% 
-        dplyr::mutate(preprocessed = "before")
+    # that this is the original data    
+    result <- compute_summary_statistics(local_data, x$original) %>% 
+        dplyr::mutate(preprocessed = "after", 
+                      filename = x$filename, 
+                      condition = NA) 
 
-    # Execute the pipeline for each data set at hand   
+    data.table::fwrite(result, 
+                       file.path("results", 
+                                 "simulation_1", 
+                                 "tmp", 
+                                 paste0("tmp0.csv")))
+
+    n <- length(fx)
+
+    # Nest the different simulations in `local_data` so that we can use it 
+    # in the mclapply later.
     local_data <- local_data %>% 
         dplyr::group_by(nsim) %>% 
-        tidyr::nest() %>% 
-        dplyr::mutate(data = data %>%  
-                          as.data.frame() %>% 
-                          nameless::execute_pipeline(fx, report = FALSE) %>% 
-                          list()) %>% 
-        tidyr::unnest(data) %>% 
-        dplyr::ungroup()
+        tidyr::nest()
 
-    # Get some summary statistics from this
-    summary_statistics <- compute_summary_statistics(local_data, x$original) %>% 
-        dplyr::mutate(preprocessed = "after") %>% 
-        rbind(summary_statistics)
+    # Parallellize the execution of each of the pipelines, given the nested 
+    # structure in `local_data`
+    parallel::mclapply(seq_along(fx), 
+                       function(i) {
+                           # Print something so that we know where the function 
+                           # is at
+                           cat("\rExecuting pipeline", 
+                               i, 
+                               "of", 
+                               n, 
+                               "for dataset", 
+                               x$filename)
+            
+                           # Execute the pipeline 
+                           result <- local_data %>% 
+                               dplyr::mutate(data = data %>% 
+                                                 as.data.frame() %>% 
+                                                 nameless::execute_pipeline(conditions[[fx[i]]], 
+                                                                            report = FALSE) %>% 
+                                                 list()) %>% 
+                               tidyr::unnest(data) %>% 
+                               dplyr::ungroup()
+            
+                           # Compute the summary statistics from the preprocessed 
+                           # data and save these results
+                           result <- compute_summary_statistics(result, x$original) %>% 
+                               dplyr::mutate(preprocessed = "after", 
+                                             filename = x$filename, 
+                                             condition = fx[i]) 
+
+                           data.table::fwrite(result, 
+                                                  file.path("results", 
+                                                            "simulation_1", 
+                                                            "tmp", 
+                                                            paste0("tmp", i, ".csv")))
+                           
+                           rm(list = c("result"))
+                           gc()
+
+                           return(NULL)
+                       },
+                       mc.cores = n_cores)
+
+    cat("\n")
+
+    # Bind all results together
+    summary_statistics <- list()
+    for(i in 0:length(fx)) {
+        summary_statistics[[i + 1]] <- data.table::fread(file.path("results", 
+                                                                   "simulation_1", 
+                                                                   "tmp", 
+                                                                   paste0("tmp", i, ".csv")))
+    }
     
-    # Bind the summary statistics to the information in the data files
-    summary_statistics <- x %>% 
-        dplyr::mutate(data = list(summary_statistics)) %>% 
-        tidyr::unnest(data)
+    summary_statistics <- do.call("rbind", summary_statistics) %>% 
+        dplyr::relocate(filename, condition, preprocessed, nsim)
 
-    return(summary_statistics)
+    # Save these results and delete the dataframes created here
+    data.table::fwrite(summary_statistics, 
+                       file.path("results", "simulation_1", paste0(x$filename, ".csv")))
+
+    rm(list = c("local_data", "summary_statistics"))
+    gc()
+
+    return(NULL)
 }
 
-# Define the number of cores to run this on in parallel
-n_cores <- max(c(parallel::detectCores() - 1, 1))
-
 # Execute this function for each combination of the data and the pipeline.
-results <- data_files %>%
-    split(seq_len(nrow(data_files))) %>%
-    as.list() %>% 
-    parallel::mclapply(pipeline_efficacy,
-                       mc.cores = n_cores) %>%
-    # lapply(pipeline_efficacy) %>% 
-    dplyr::bind_rows()
+for(i in seq_len(nrow(data_files))) {
+    # Give us some feedback on which file is being preprocessed now
+    cat("\rPreprocessing", 
+        data_files$filename[i], 
+        ": data file", 
+        i, 
+        "of", 
+        nrow(data_files),
+        "\n")
 
-data.table::fwrite(results, 
-                   file.path("results", "simulation_1" "preprocessing_results.csv"))
+    # Actually preprocess the file
+    pipeline_efficacy(data_files[i,])
+}
 
 
 
