@@ -274,8 +274,7 @@ compute_summary_statistics <- function(data, kind) {
 pipeline_efficacy <- function(x){
     
     # Retrieve the data and the pipeline for the condition
-    local_data <- data_list[[x$filename]] %>% 
-        dplyr::filter(time < 2)
+    local_data <- data_list[[x$filename]] 
     fx <- names(conditions)
 
     # Check whether the data have a reference to the simulation number. If not, 
