@@ -274,7 +274,7 @@ compute_summary_statistics <- function(data, kind) {
 pipeline_efficacy <- function(x){
     
     # Retrieve the data and the pipeline for the condition
-    local_data <- data_list[[x$filename]] 
+    local_data <- data_list[[x$filename]]
     fx <- names(conditions)
 
     # Check whether the data have a reference to the simulation number. If not, 
@@ -288,7 +288,7 @@ pipeline_efficacy <- function(x){
     # to, which is an overall better approach. Add an indicator that tells us 
     # that this is the original data    
     result <- compute_summary_statistics(local_data, x$original) %>% 
-        dplyr::mutate(preprocessed = "after", 
+        dplyr::mutate(preprocessed = "before", 
                       filename = x$filename, 
                       condition = NA) 
 
