@@ -194,7 +194,7 @@ conditions <- append(mw_alone,
 # Combine the information of the conditions with the information on the data
 # itself, matching conditions to data
 data_files <- data.frame(filename = data_files, 
-                         original = rep(c("movement", "fixed"), each = length(data_files)))
+                         original = rep(c("movement", "fixed"), each = length(data_files) / 2))
 
 data.table::fwrite(data_files, file.path("results", "simulation_1", "data_files.csv"))
 saveRDS(conditions, file.path("results", "simulation_1", "conditions.Rds"))
