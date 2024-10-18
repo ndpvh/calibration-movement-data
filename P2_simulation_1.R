@@ -232,7 +232,8 @@ compute_summary_statistics <- function(data, kind) {
         # Compute the difference between filtered and expected positions. Used 
         # to measure the extent to which systematic error is present in the data
         dplyr::mutate(difference_x = X - x, 
-                      difference_y = Y - y) %>% 
+                      difference_y = Y - y, 
+                      distance = sqrt((X - x)^2 + (Y - y)^2)) %>% 
 
         # Compute the statistics of interest per simulation and id. This 
         # will allow for a more broad view on where it still might go awry
@@ -242,15 +243,19 @@ compute_summary_statistics <- function(data, kind) {
                          # positions
                          mean_diff_x = mean(difference_x, na.rm = TRUE), 
                          mean_diff_y = mean(difference_y, na.rm = TRUE), 
+                         mean_dist = mean(distance, na.rm = TRUE),
                          q025_diff_x = quantile(difference_x, probs = 0.025, na.rm = TRUE),
                          q025_diff_y = quantile(difference_y, probs = 0.025, na.rm = TRUE),
+                         q025_diff_y = quantile(distance, probs = 0.025, na.rm = TRUE),
                          q975_diff_x = quantile(difference_x, probs = 0.975, na.rm = TRUE),
                          q975_diff_y = quantile(difference_y, probs = 0.975, na.rm = TRUE), 
+                         q975_diff_y = quantile(distance, probs = 0.975, na.rm = TRUE), 
 
                          # Statistics about the size of the measurement error
                          # (compared to the actual positions)
                          sd_diff_x = sd(difference_x, na.rm = TRUE), 
                          sd_diff_y = sd(difference_y, na.rm = TRUE), 
+                         sd_dist = sd(distance, na.rm = TRUE),
                          
                          # Autocorrelation in the residuals
                          auto_x = cor(difference_x[2:length(difference_x)], 
@@ -258,7 +263,10 @@ compute_summary_statistics <- function(data, kind) {
                                       use = "pairwise.complete.obs"), 
                          auto_y = cor(difference_y[2:length(difference_y)], 
                                       difference_y[2:length(difference_y) - 1], 
-                                      use = "pairwise.complete.obs")) %>% 
+                                      use = "pairwise.complete.obs"), 
+                         auto_dist = cor(distance[2:length(distance)], 
+                                         distance[2:length(distance) - 1], 
+                                         use = "pairwise.complete.obs")) %>% 
         dplyr::ungroup() %>% 
         suppressMessages() %>% 
         return()
