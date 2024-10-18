@@ -491,7 +491,7 @@ make_plot <- function(x,
 
 # Create all figures
 for(i in seq_along(results)) {
-    for(j in c("mean_diff_x", "mean_diff_y", "sd_diff_x", "sd_diff_y")) {
+    for(j in c("mean_diff_x", "mean_diff_y", "mean_dist", "sd_diff_x", "sd_diff_y", "sd_dist")) {
         make_plot(results[[i]], j)
     }
 }
