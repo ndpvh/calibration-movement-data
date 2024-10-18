@@ -395,87 +395,95 @@ for(i in seq_len(nrow(data_files))) {
 ################################################################################
 # VISUALIZATION
 
-# Load the needed file
-# results <- data.table::fread(file.path("results", "synthetic_preprocessing.csv"))
+# Load the needed files
+filenames <- list.files(path = file.path(".", "results", "simulation_1"), 
+                        pattern = "\\.csv")
+filenames <- filenames[filenames != "data_files.csv"]
 
-# # Create a function that will plot distributional histograms for the different 
-# # statistics and dimensions
-# make_plot <- function(x, 
-#                       dim, 
-#                       statistic) {
+results <- lapply(filenames, 
+                  \(x) data.table::fread(file.path(".", "results", "simulation_1", x), 
+                                         data.table = FALSE))
 
-#     # Create the column name to be used when selecting data
-#     col <- paste0(statistic, 
-#                   "_diff_", 
-#                   dim)
+# Create a function that takes in a dataframe and creates the plots of interest
+make_plot <- function(x, 
+                      statistics) {
 
-#     # Extract the different data sets and the different preprocessing strategies
-#     dataset <- unique(x$filename)
-#     preprocess <- unique(x$condition)
+    # Split data before preprocessing and after preprocessing
+    before <- dplyr::filter(x, preprocessed == "before")
+    after <- dplyr::filter(x, preprocessed == "after")
 
-#     # Get the limits of the plots
-#     limits <- x %>% 
-#         dplyr::select(as.character(col)) %>% 
-#         range(na.rm = TRUE)
-#     limits <- limits + c(-1, 1) * diff(limits) * 0.05
+    # Get the data of before
+    before <- before %>%
+        dplyr::select(contains(statistics)) %>%
+        setNames("X") %>%
+        dplyr::mutate(M = 1)
 
-#     # Loop over these unique names and create the plots. Put these plots in a 
-#     # list to be bound together using ggpubr
-#     plt <- list()
-#     for(i in seq_along(preprocess)) {
-#         for(j in seq_along(dataset)) {
-#             # Select the data
-#             plot_data <- x %>% 
-#                 dplyr::filter(filename == dataset[j], 
-#                               condition == preprocess[i]) %>% 
-#                 dplyr::select(as.character(col)) %>% 
-#                 setNames("X")
+    # Get all conditions out of there
+    conditions <- unique(after$condition)
 
-#             # Create the plot
-#             idx <- (i - 1) * length(dataset) + j
-#             plt[[idx]] <- ggplot2::ggplot(data = plot_data, 
-#                                           ggplot2::aes(x = X)) +
-#                 ggplot2::geom_histogram(fill = "cornflowerblue", 
-#                                         bins = 10) +
-#                 ggplot2::geom_vline(xintercept = 0,
-#                                     color = "salmon", 
-#                                     linewidth = 2) +
-#                 ggplot2::labs(title = ifelse(i == 1, dataset[j], " "), 
-#                               y = ifelse(j == 1, preprocess[i], " "), 
-#                               x = " ") +
-#                 ggplot2::lims(x = limits) +
-#                 ggplot2::theme_minimal() +
-#                 ggplot2::theme(axis.title.y = ggplot2::element_text(size = 15, 
-#                                                                     angle = 90, 
-#                                                                     vjust = 0.5, 
-#                                                                     hjust = 0.5), 
-#                                plot.title = ggplot2::element_text(size = 15, 
-#                                                                   hjust = 0.5),
-#                                axis.text = ggplot2::element_text(size = 10, 
-#                                                                  angle = 45, 
-#                                                                  hjust = 1))
-#         }
-#     }
+    # Fix the limits on the x-axis (within bounds, of course)
+    all_x <- x[, statistics]
 
-#     # Bind together and return the resulting plot
-#     plt <- ggpubr::ggarrange(plotlist = plt,
-#                              nrow = length(preprocess), 
-#                              ncol = length(dataset))
+    if(grepl("sd", statistics, fixed = TRUE)) {
+        idx <- all_x < quantile(all_x, probs = 0.95)
+    } else {
+        idx <- all_x < quantile(all_x, probs = 0.975) & all_x > quantile(all_x, probs = 0.025)
+    }
 
-#     return(plt)
-# }
+    xlim <- range(all_x[idx])
 
-# # Define the dimensions and the statistics
-# statistics <- c("mean", "sd", "q025", "q975")
-# dims <- c("x", "y")
+    # Loop over all conditions and create the plot of interest
+    plt <- list()
+    for(i in conditions) {
+        # Get plot data for the condition and the statistic of interest. Bind 
+        # together for before and after
+        plot_data <- after %>%
+            dplyr::filter(condition == i) %>%
+            dplyr::select(contains(statistics)) %>%
+            setNames("X") %>%
+            dplyr::mutate(M = 2) %>%
+            rbind(before) %>%
+            dplyr::mutate(M = factor(M))
 
-# # Loop over them and save the plots
-# for(i in dims) {
-#     for(j in statistics) {
-#         ggplot2::ggsave(file.path("figures", "synthetic", paste0(j, "_", i, ".jpg")), 
-#                         make_plot(results, i, j), 
-#                         width = 6 * 500, 
-#                         height = 13 * 600, 
-#                         unit = "px")
-#     }
-# }
+        # Create a histogram as the plot of choice. Include the condition name 
+        # in the plot and make the legend tell us something
+        plt[[i]] <- ggplot2::ggplot(data = plot_data, 
+                                    ggplot2::aes(x = X, fill = M)) +
+            ggplot2::geom_histogram(alpha = 0.5, 
+                                    bins = 15, 
+                                    color = "black", 
+                                    position = "identity") +
+            ggplot2::labs(title = i, 
+                          legend = "Preprocessed") +
+            ggplot2::lims(x = xlim) +
+            ggplot2::scale_fill_manual(labels = c("1" = "Before", 
+                                                  "2" = "After"), 
+                                       values = c("1" = "salmon", 
+                                                  "2" = "cornflowerblue")) +
+            ggplot2::theme_minimal() 
+    }
+
+    # Bind together and save under figures
+    plt <- ggpubr::ggarrange(plotlist = plt, 
+                             nrow = 17, 
+                             ncol = 17,
+                             common.legend = TRUE, 
+                             legend = "right")
+
+    ggplot2::ggsave(plt, 
+                    filename = file.path("figures", 
+                                         "simulation_1", 
+                                         paste0(x$filename[1], "__", statistics, ".png")), 
+                    width = 17 * 600,
+                    height = 17 * 650, 
+                    unit = "px")
+
+    return(NULL)
+}
+
+# Create all figures
+for(i in seq_along(results)) {
+    for(j in c("mean_diff_x", "mean_diff_y", "sd_diff_x", "sd_diff_y")) {
+        make_plot(results[[i]], j)
+    }
+}
