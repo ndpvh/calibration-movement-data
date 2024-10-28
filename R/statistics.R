@@ -133,18 +133,19 @@ linear <- function(data,
 
     rotated <- FALSE
 
-    # Do two regressions and check which one has the highest r-squared
-    lm_y <- lm(y ~ x, data = data)
-    lm_x <- lm(x ~ y, data = data)
-
     # Get the index of the data for which the `index == 0`: These coordinates 
     # needed
     idx <- data$index == 0
     co <- as.numeric(data[idx, c("x", "y")])
 
-    # Special case: vertical or horizontal predictivity. If we find such a case
-    # We will first try to rotate the data and try again
-    if(is.na(lm_y$coefficients[2]) | is.na(lm_x$coefficients[2])) {
+    # Do a regression of y on x, of which we'll then use the results in our 
+    # analysis.
+    lm_y <- lm(y ~ x, data = data)
+
+    # Check whether the regression predicts vertical or horizontal relationships.
+    # If so, it is better to rotate the data by 45 degrees and do another 
+    # regression.
+    if(is.na(lm_y$coefficients[2]) | round(lm_y$coefficients[2], 10) == 0) {
         rotated <- TRUE 
 
         # Rotate the data with 45 degrees
@@ -158,30 +159,32 @@ linear <- function(data,
 
         # Now that the data have been rotated, do the regressions again
         lm_y <- lm(y ~ x, data = rotated_data)
-        lm_x <- lm(x ~ y, data = rotated_data)
 
         # Replace the coordinate with the rotated one
         co <- as.numeric(rotated_data[idx, c("x", "y")])
     }
 
-    # Generate predictions for the (x, y) coordinates
-    if(summary(lm_y)$r.squared >= summary(lm_x)$r.squared) {
-        # Extract coefficients
-        b0 <- lm_y$coefficients[1]
-        b1 <- lm_y$coefficients[2]
+    # Extract coefficients
+    b0 <- lm_y$coefficients[1]
+    b1 <- lm_y$coefficients[2]
 
-        # Create predicted (x, y) coordinates based on the observed coordinates
-        y_hat <- as.numeric(b0 + b1 * co[1])
-        x_hat <- as.numeric((co[2] - b0) / b1)
-    } else {
-        # Extract coefficients
-        b0 <- lm_x$coefficients[1]
-        b1 <- lm_x$coefficients[2]
+    # Classical way of getting to the coordinates: Fill out the observed value of
+    # x or y and find out which value of y or x corresponds to this value in the
+    # linear regression
+    y_hat <- as.numeric(b0 + b1 * co[1])
+    x_hat <- as.numeric((co[2] - b0) / b1)
 
-        # Create predicted (x, y) coordinates based on the observed coordinates
-        y_hat <- as.numeric((co[1] - b0) / b1)
-        x_hat <- as.numeric(b0 + b1 * co[2])
-    }
+    # Let's try a new way of getting predictions: Find the line perpendicular to 
+    # the linear regression through the observed coordinate and find the 
+    # intersection point of these two lines
+    angle <- atan(b1)       # Get orientation of the regression line
+    perp <- angle + pi / 2  # Get perpendicular angle
+
+    b1_perp <- tan(perp)    # Transform to slope
+    b0_perp <- co[2] - b1_perp * co[1]  # Get intercept
+
+    x_hat <- (b0_perp - b0) / (b1 - b1_perp)
+    y_hat <- b0 + b1 * x_hat
 
     # If the data were rotated, rotate them back now and replace the predicted 
     # values with these rotated ones
@@ -203,14 +206,12 @@ linear <- function(data,
     # Compute the average of the observed and predicted coordinates. If the 
     # data are not linearly related (even after rotation), then just return 
     # the raw coordinates
-    if(is.na(lm_y$coefficients[2]) | is.na(lm_x$coefficients[2]) | 
-       is.na(x_hat) | is.na(y_hat) |
-       round(lm_y$coefficients[2], 10) == 0 | round(lm_x$coefficients[2], 10) == 0) {
+    if(is.na(lm_y$coefficients[2]) | is.na(x_hat) | is.na(y_hat)) { 
         result <- data.frame(x = co[1], 
                              y = co[2])  
     } else {
-        result <- data.frame(x = mean(c(co[1], x_hat)), 
-                             y = mean(c(co[2], y_hat)))
+        result <- data.frame(x = x_hat, 
+                             y = y_hat)
     }
 
     # Use the `index == 0` values of the data for each of the columns that 
