@@ -4,7 +4,7 @@
 \alias{execute_pipeline}
 \title{Perform a preprocessing pipeline}
 \usage{
-execute_pipeline(data, fx)
+execute_pipeline(data, fx, report = TRUE)
 }
 \arguments{
 \item{data}{Dataframe that contains the columns `time`, `id`, `x`, and `y`.}
