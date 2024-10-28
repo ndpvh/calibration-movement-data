@@ -27,6 +27,7 @@ Collate:
     'statistics.R'
     'moving_window.R'
     'bin.R'
+    'loess.R'
     'kalman_filter.R'
     'load_data.R'
     'normalize_position.R'
