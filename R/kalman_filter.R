@@ -348,7 +348,7 @@ constant_velocity <- function(data,
           0, Delta_t^2 * var_w[2], 0, Delta_t * var_w[2], 
           Delta_t * var_w[1], 0, var_w[1], 0,
           0, Delta_t * var_w[2], 0, var_w[2]) %>% 
-            matrix(nrow = 4, ncol = 4) %>% 
+            matrix(nrow = 4, ncol = 4, byrow = TRUE) %>% 
             return()
     }
 
@@ -367,10 +367,17 @@ constant_velocity <- function(data,
             mean(velocity$x, na.rm = TRUE),
             mean(velocity$y, na.rm = TRUE)) %>% 
         matrix(ncol = 1)
-    F0 <- cov(cbind(observed_data$x, observed_data$y, 
-                    c(NA, velocity$x), c(NA, velocity$y)), 
-              use = "pairwise.complete.obs") %>% 
-        chol()
+    
+    F0 <- cbind(rbind(cov(cbind(observed_data$x, observed_data$y), 
+                          use = "pairwise.complete.obs"), 
+                      matrix(0, nrow = 2, ncol = 2)),
+                rbind(matrix(0, nrow = 2, ncol = 2), 
+                      cov(cbind(velocity$x, velocity$y), 
+                          use = "pairwise.complete.obs")))    
+    F0 <- tryCatch(chol(F0), 
+                   error = function(e) {
+                      stop("Try again. F0 didn't work")
+                   })
 
     # Put everything in a list and return
     return(list("y" = y, 
@@ -491,10 +498,16 @@ constant_acceleration <- function(data,
             mean(velocity$x, na.rm = TRUE),
             mean(velocity$y, na.rm = TRUE)) %>% 
         matrix(ncol = 1)
-    F0 <- cov(cbind(observed_data$x, observed_data$y, 
-                    c(NA, velocity$x), c(NA, velocity$y)), 
-              use = "pairwise.complete.obs") %>% 
-        chol()
+    F0 <- cbind(rbind(cov(cbind(observed_data$x, observed_data$y), 
+                          use = "pairwise.complete.obs"), 
+                      matrix(0, nrow = 2, ncol = 2)),
+                rbind(matrix(0, nrow = 2, ncol = 2), 
+                      cov(cbind(velocity$x, velocity$y), 
+                          use = "pairwise.complete.obs")))    
+    F0 <- tryCatch(chol(F0), 
+                   error = function(e) {
+                      stop("Try again. F0 didn't work")
+                   })
 
     # Put everything in a list and return
     return(list("y" = y, 
