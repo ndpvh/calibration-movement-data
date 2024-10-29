@@ -510,5 +510,5 @@ constant_acceleration <- function(data,
 }
 
 # List of all models that exist
-kalman_models <- list("constant_velocity" = \(x, reverse) constant_velocity(x, reverse = reverse), 
-                      "constant_acceleration" = \(x, reverse) constant_acceleration(x, reverse = reverse))
+kalman_models <- list("constant_velocity" = constant_velocity, 
+                      "constant_acceleration" = constant_acceleration)
