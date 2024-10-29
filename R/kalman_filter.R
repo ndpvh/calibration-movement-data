@@ -16,18 +16,26 @@ kalman_filter <- function(data,
                           reverse = TRUE,
                           model = "constant_velocity", 
                           .by = NULL, 
-                          check = FALSE) {
+                          check = FALSE, 
+                          assumed_variance = 0.031^2) {
     
     # Dispatch on whether to group the data by a given variable or not
     if(is.null(.by)) {
-        return(kalman_filter_individual(data, reverse = reverse, model = model, check = check))
+        return(kalman_filter_individual(data, 
+                                        reverse = reverse, 
+                                        model = model, 
+                                        check = check, 
+                                        assumed_variance = assumed_variance))
     } else {
         data %>% 
             dplyr::group_by(.dots = .by) %>% 
             tidyr::nest() %>% 
             dplyr::mutate(data = data %>% 
                 as.data.frame() %>% 
-                kalman_filter_individual(reverse = reverse, model = model, check = check) %>% 
+                kalman_filter_individual(reverse = reverse, 
+                                         model = model, 
+                                         check = check,
+                                         assumed_variance = assumed_variance) %>% 
                 list()) %>% 
             tidyr::unnest(data) %>% 
             dplyr::ungroup() %>% 
@@ -47,7 +55,8 @@ kalman_filter <- function(data,
 kalman_filter_individual <- function(data, 
                                      reverse = TRUE,
                                      model = "constant_velocity", 
-                                     check = FALSE) {
+                                     check = FALSE,
+                                     assumed_variance = 0.031^2) {
 
     # Robustness against too little data. When there was only 1 row, errors arose
     if(nrow(data) <= 5) {
@@ -55,7 +64,9 @@ kalman_filter_individual <- function(data,
     }
 
     # Get the model parameters and initial conditions
-    parameters <- kalman_models[[model]](data, reverse = reverse)
+    parameters <- kalman_models[[model]](data, 
+                                         reverse = reverse, 
+                                         assumed_variance = assumed_variance)
 
     # Extract some of the more useful parameters, namely data and initial 
     # conditions
@@ -255,7 +266,8 @@ kf_update <- function(x,
 
 # Constant velocity model: Transform data to and create the parameters
 constant_velocity <- function(data,
-                              reverse = TRUE) {
+                              reverse = TRUE, 
+                              assumed_variance = 0.031^2) {
     # Measurements
     y <- data %>% 
         dplyr::select(time, x, y) %>% 
@@ -319,8 +331,6 @@ constant_velocity <- function(data,
     # note that we delete the derived measurement error observed at the position 
     # level from the derived variance in the acceleration, as in our derivation 
     # the measurement error seeps through.
-    assumed_variance <- 0.031^2
-
     observed_data <- y[y$original, ]
     velocity <- data.frame(x = diff(observed_data$x) / abs(diff(observed_data$time)), 
                            y = diff(observed_data$y) / abs(diff(observed_data$time)), 
@@ -377,7 +387,8 @@ constant_velocity <- function(data,
 
 # Constant acceleration model: Transform data to and create the parameters
 constant_acceleration <- function(data,
-                                  reverse = TRUE) {
+                                  reverse = TRUE, 
+                                  assumed_variance = 0.031^2) {
     # Measurements
     y <- data %>% 
         dplyr::select(time, x, y) %>% 
@@ -441,8 +452,6 @@ constant_acceleration <- function(data,
     # note that we delete the derived measurement error observed at the position 
     # level from the derived variance in the acceleration, as in our derivation 
     # the measurement error seeps through.
-    assumed_variance <- 0.031^2
-
     observed_data <- y[y$original, ]
     velocity <- data.frame(x = diff(observed_data$x) / abs(diff(observed_data$time)), 
                            y = diff(observed_data$y) / abs(diff(observed_data$time)), 
