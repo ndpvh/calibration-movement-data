@@ -15,18 +15,19 @@
 kalman_filter <- function(data,     
                           reverse = TRUE,
                           model = "constant_velocity", 
-                          .by = NULL) {
+                          .by = NULL, 
+                          check = FALSE) {
     
     # Dispatch on whether to group the data by a given variable or not
     if(is.null(.by)) {
-        return(kalman_filter_individual(data, reverse = reverse, model = model))
+        return(kalman_filter_individual(data, reverse = reverse, model = model, check = check))
     } else {
         data %>% 
             dplyr::group_by(.dots = .by) %>% 
             tidyr::nest() %>% 
             dplyr::mutate(data = data %>% 
                 as.data.frame() %>% 
-                kalman_filter_individual(reverse = reverse, model = model) %>% 
+                kalman_filter_individual(reverse = reverse, model = model, check = check) %>% 
                 list()) %>% 
             tidyr::unnest(data) %>% 
             dplyr::ungroup() %>% 
@@ -45,7 +46,8 @@ kalman_filter <- function(data,
 #' @export 
 kalman_filter_individual <- function(data, 
                                      reverse = TRUE,
-                                     model = "constant_velocity") {
+                                     model = "constant_velocity", 
+                                     check = FALSE) {
 
     # Robustness against too little data. When there was only 1 row, errors arose
     if(nrow(data) <= 5) {
@@ -69,6 +71,7 @@ kalman_filter_individual <- function(data,
     smoothed_y <- y
     P <- list()
     K <- list()
+    z <- list()
     
     # Iterate over the data to smooth it
     for(i in seq_len(nrow(y))) {
@@ -116,10 +119,23 @@ kalman_filter_individual <- function(data,
         smoothed_y[i, cols] <- result[["x"]][which(cols %in% c("x", "y"))]
         P[[i]] <- t(result[["F"]]) %*% result[["F"]]
         K[[i]] <- innovation[["K"]]
+        z[[i]] <- innovation[["z"]]
 
         # Overwrite the initial conditions with the newly acquired values
         x0 <- result[["x"]]
         F0 <- result[["F"]]
+    }
+
+    # If you want to check the autocorrelation assumptions in the innovations, 
+    # print out the results
+    if(check) {
+        idx <- y$original
+        z <- do.call("cbind", z[idx])
+
+        message(paste0("Correlations between the innovations are ", 
+                       cor(z[1, 2:ncol(z) - 1], z[1, 2:ncol(z)]), 
+                       " and ", 
+                       cor(z[2, 2:ncol(z) - 1], z[2, 2:ncol(z)])))
     }
 
     # If you reversed the data, delete the reversed data and only keep the new 
@@ -249,18 +265,16 @@ constant_velocity <- function(data,
                       original = TRUE)
 
     # If you want to smooth the data forwards and backwards, add the reversed 
-    # data to `y`
+    # data to `y`. In these data, \Delta t should still be positive, as time 
+    # cannot be negative in the constant velocity model
     if(reverse) {
         reversed_y <- data %>% 
             dplyr::select(time, x, y) %>% 
             dplyr::arrange(time) %>% 
             dplyr::mutate(index = dplyr::row_number()) %>% 
             dplyr::arrange(desc(time)) %>% 
-            dplyr::mutate(Delta_t = c(0, time[2:length(time)] - time[2:length(time) - 1]),
+            dplyr::mutate(Delta_t = abs(c(0, time[2:length(time)] - time[2:length(time) - 1])),
                           original = FALSE)
-            # dplyr::mutate(index = rev(dplyr::row_number()), 
-            #               Delta_t = c(0, time[2:length(time)] - time[2:length(time) - 1]),
-            #               original = FALSE)
 
         y <- rbind(reversed_y, dplyr::filter(y, Delta_t != 0))
         y$original <- c(rep(FALSE, nrow(data) - 1),
@@ -273,59 +287,203 @@ constant_velocity <- function(data,
 
     # Create the transition matrix A, which depends on the data
     A <- function(Delta_t) {
-        c(1, 0, Delta_t, 0, Delta_t^2 / 2, 0,
-          0, 1, 0, Delta_t, 0, Delta_t^2 / 2,
-          0, 0, 1, 0, Delta_t, 0,
-          0, 0, 0, 1, 0, Delta_t, 
-          0, 0, 0, 0, 1, 0, 
-          0, 0, 0, 0, 0, 1) %>% 
-            matrix(nrow = 6, ncol = 6, byrow = TRUE) %>% 
+        c(1, 0, Delta_t, 0,
+          0, 1, 0, Delta_t,
+          0, 0, 1, 0,
+          0, 0, 0, 1) %>% 
+            matrix(nrow = 4, ncol = 4, byrow = TRUE) %>% 
             return()
     }
 
     # Create B, which in this case is empty
-    B <- matrix(0, nrow = 6, ncol = 1)
+    B <- matrix(0, nrow = 4, ncol = 1)
 
-    # Define the process noise as the Random Acceleration process noise
-    # (see Saho (2018)). Also depends on the data and on an arbitrary value 
-    # to be given for the variance that is expected. Here, we use the empirical
-    # value of the acceleration variation and correct for the measurement error
-    # that we have on the positions.
-    var_q <- c(y$x[y$original] %>% diff() %>% diff() %>% var(),
-               y$y[y$original] %>% diff() %>% diff() %>% var()) - 3 * 0.031^2
-    var_q <- ifelse(var_q <= 1e-6, 1e-6, var_q)
+    # Define the process noise as the Random Velocity process noise, for which 
+    # we will use empirically informed values using two steps. 
+    #
+    # Step 1 consists of creating the empirically informed values. First, we 
+    # assume a given variance based on the measurement error observed in the 
+    # calibration experiments. Additionally, we compute observed velocities and 
+    # accelerations from the data and compute the variance at each level. For 
+    # the constant velocity model, it is sufficient to use the observed 
+    # variance of the acceleration for the creation of the W matrix. Note that
+    # we subtract the assumed variance at the position level from this 
+    # acceleration variance to get a more accurate estimate of this variance 
+    # (allowing for a more accurate Kalman filter).
+    #
+    # Step 2 consists of using these values to create the W matrix, consisting 
+    # of the movement variances at each level at each time step. Note that in 
+    # most sources, this matrix is called Q instead of W, while the allowed 
+    # variation at the acceleration level itself is often denoted w. I chose to 
+    # be consistent with the lowercase notation of this variation. Furthermore 
+    # note that we delete the derived measurement error observed at the position 
+    # level from the derived variance in the acceleration, as in our derivation 
+    # the measurement error seeps through.
+    assumed_variance <- 0.031^2
 
+    observed_data <- y[y$original, ]
+    velocity <- data.frame(x = diff(observed_data$x) / abs(diff(observed_data$time)), 
+                           y = diff(observed_data$y) / abs(diff(observed_data$time)), 
+                           Delta_t = abs(diff(observed_data$time)))
+    
+    var_w <- c(var(velocity$x), var(velocity$y)) - 2 * mean(velocity$Delta_t)^(-2) * assumed_variance
+    var_w <- ifelse(var_w <= 1e-10, 1e-10, var_w)
+
+    cov_w <- cov(velocity$x, velocity$y)
+
+    # In some sources called Q, while W is reserved for just the errors 
+    # themselves
     W <- function(Delta_t) {
-        c(Delta_t^4 * var_q[1] / 4, 0, Delta_t^3 * var_q[1] / 2, 0, 0, 0,
-          0, Delta_t^4 * var_q[2] / 4, 0, Delta_t^3 * var_q[2] / 2, 0, 0,
-          Delta_t^3 * var_q[1] / 2, 0, Delta_t^2 * var_q[1], 0, 0, 0,
-          0, Delta_t^3 * var_q[2] / 2, 0, Delta_t^2 * var_q[2], 0, 0,
-          0, 0, 0, 0, var_q[1], 0,
-          0, 0, 0, 0, 0, var_q[2]) %>% 
-            matrix(nrow = 6, ncol = 6) %>% 
+        c(Delta_t^2 * var_w[1], 0, Delta_t * var_w[1], 0, 
+          0, Delta_t^2 * var_w[2], 0, Delta_t * var_w[2], 
+          Delta_t * var_w[1], 0, var_w[1], 0,
+          0, Delta_t * var_w[2], 0, var_w[2]) %>% 
+            matrix(nrow = 4, ncol = 4) %>% 
             return()
     }
 
     # Create the measurement matrix H. Only positions x and y are measured
-    H <- c(1, 0, 0, 0, 0, 0,
-           0, 1, 0, 0, 0, 0) %>% 
+    H <- c(1, 0, 0, 0,
+           0, 1, 0, 0) %>% 
         matrix(nrow = 2, byrow = TRUE)
 
     # Define the measurement error covariances
-    V <- matrix(c(0.031^2, 0, 0, 0.031^2), nrow = 2, ncol = 2) %>% 
+    V <- matrix(c(assumed_variance, 0, 0, assumed_variance), nrow = 2, ncol = 2) %>% 
         chol()
 
     # Define the initial conditions. Very vague but data-informed priors
     x0 <- c(mean(data$x, na.rm = TRUE), 
             mean(data$y, na.rm = TRUE),
-            mean(diff(data$x), na.rm = TRUE),
-            mean(diff(data$y), na.rm = TRUE),
-            mean(diff(diff(data$x)), na.rm = TRUE), 
-            mean(diff(diff(data$y)), na.rm = TRUE)) %>% 
+            mean(velocity$x, na.rm = TRUE),
+            mean(velocity$y, na.rm = TRUE)) %>% 
         matrix(ncol = 1)
-    F0 <- cov(cbind(data$x, data$y, 
-                    c(0, diff(data$x)), c(0, diff(data$y)),
-                    c(0, 0, diff(diff(data$x))), c(0, 0, diff(diff(data$y)))), 
+    F0 <- cov(cbind(observed_data$x, observed_data$y, 
+                    c(NA, velocity$x), c(NA, velocity$y)), 
+              use = "pairwise.complete.obs") %>% 
+        chol()
+
+    # Put everything in a list and return
+    return(list("y" = y, 
+                "u" = numeric(nrow(y)),
+                "x0" = x0, 
+                "F0" = F0,
+                "A" = A, 
+                "B" = B,
+                "W" = W, 
+                "H" = H, 
+                "V" = V,
+                "cols_of_interest" = cols_of_interest))
+}
+
+# Constant acceleration model: Transform data to and create the parameters
+constant_acceleration <- function(data,
+                                  reverse = TRUE) {
+    # Measurements
+    y <- data %>% 
+        dplyr::select(time, x, y) %>% 
+        dplyr::arrange(time) %>% 
+        dplyr::mutate(index = dplyr::row_number(), 
+                      Delta_t = c(0, time[2:length(time)] - time[2:length(time) - 1]), 
+                      original = TRUE)
+
+    # If you want to smooth the data forwards and backwards, add the reversed 
+    # data to `y`. In these data, \Delta t should still be positive, as time 
+    # cannot be negative in the constant velocity model
+    if(reverse) {
+        reversed_y <- data %>% 
+            dplyr::select(time, x, y) %>% 
+            dplyr::arrange(time) %>% 
+            dplyr::mutate(index = dplyr::row_number()) %>% 
+            dplyr::arrange(desc(time)) %>% 
+            dplyr::mutate(Delta_t = abs(c(0, time[2:length(time)] - time[2:length(time) - 1])),
+                          original = FALSE)
+
+        y <- rbind(reversed_y, dplyr::filter(y, Delta_t != 0))
+        y$original <- c(rep(FALSE, nrow(data) - 1),
+                        rep(TRUE, nrow(data)))
+    }
+
+    # Define the columns in `y` that should be taken into account when using the 
+    # filter
+    cols_of_interest <- c("x", "y")
+
+    # Create the transition matrix A, which depends on the data
+    A <- function(Delta_t) {
+        c(1, 0, Delta_t, 0,
+          0, 1, 0, Delta_t,
+          0, 0, 1, 0,
+          0, 0, 0, 1) %>% 
+            matrix(nrow = 4, ncol = 4, byrow = TRUE) %>% 
+            return()
+    }
+
+    # Create B, which in this case is empty
+    B <- matrix(0, nrow = 4, ncol = 1)
+
+    # Define the process noise as the Random Velocity process noise, for which 
+    # we will use empirically informed values using two steps. 
+    #
+    # Step 1 consists of creating the empirically informed values. First, we 
+    # assume a given variance based on the measurement error observed in the 
+    # calibration experiments. Additionally, we compute observed velocities and 
+    # accelerations from the data and compute the variance at each level. For 
+    # the constant velocity model, it is sufficient to use the observed 
+    # variance of the acceleration for the creation of the W matrix. Note that
+    # we subtract the assumed variance at the position level from this 
+    # acceleration variance to get a more accurate estimate of this variance 
+    # (allowing for a more accurate Kalman filter).
+    #
+    # Step 2 consists of using these values to create the W matrix, consisting 
+    # of the movement variances at each level at each time step. Note that in 
+    # most sources, this matrix is called Q instead of W, while the allowed 
+    # variation at the acceleration level itself is often denoted w. I chose to 
+    # be consistent with the lowercase notation of this variation. Furthermore 
+    # note that we delete the derived measurement error observed at the position 
+    # level from the derived variance in the acceleration, as in our derivation 
+    # the measurement error seeps through.
+    assumed_variance <- 0.031^2
+
+    observed_data <- y[y$original, ]
+    velocity <- data.frame(x = diff(observed_data$x) / abs(diff(observed_data$time)), 
+                           y = diff(observed_data$y) / abs(diff(observed_data$time)), 
+                           Delta_t = abs(diff(observed_data$time)))
+    acceleration <- data.frame(x = diff(velocity$x) / abs(diff(observed_data$time, lag = 2)), 
+                               y = diff(velocity$y) / abs(diff(observed_data$time, lag = 2)), 
+                               Delta_t = abs(diff(observed_data$time, lag = 2)))
+    
+    var_w <- c(var(acceleration$x), var(acceleration$y)) - 4 * mean(acceleration$Delta_t)^(-4) * assumed_variance
+    var_w <- ifelse(var_w <= 1e-10, 1e-10, var_w)
+
+    cov_w <- cov(velocity$x, velocity$y)
+
+    # In some sources called Q, while W is reserved for just the errors 
+    # themselves
+    W <- function(Delta_t) {
+        c(Delta_t^4 / 4 * var_w[1], 0, Delta_t^3 / 2 * var_w[1], 0, 
+          0, Delta_t^4 / 4 * var_w[2], 0, Delta_t^3 / 2 * var_w[2], 
+          Delta_t^3 / 2 * var_w[1], 0, Delta_t^2 * var_w[1], 0,
+          0, Delta_t^3 / 2 * var_w[2], 0, Delta_t^2 * var_w[2]) %>% 
+            matrix(nrow = 4, ncol = 4) %>% 
+            return()
+    }
+
+    # Create the measurement matrix H. Only positions x and y are measured
+    H <- c(1, 0, 0, 0,
+           0, 1, 0, 0) %>% 
+        matrix(nrow = 2, byrow = TRUE)
+
+    # Define the measurement error covariances
+    V <- matrix(c(assumed_variance, 0, 0, assumed_variance), nrow = 2, ncol = 2) %>% 
+        chol()
+
+    # Define the initial conditions. Very vague but data-informed priors
+    x0 <- c(mean(data$x, na.rm = TRUE), 
+            mean(data$y, na.rm = TRUE),
+            mean(velocity$x, na.rm = TRUE),
+            mean(velocity$y, na.rm = TRUE)) %>% 
+        matrix(ncol = 1)
+    F0 <- cov(cbind(observed_data$x, observed_data$y, 
+                    c(NA, velocity$x), c(NA, velocity$y)), 
               use = "pairwise.complete.obs") %>% 
         chol()
 
@@ -343,4 +501,5 @@ constant_velocity <- function(data,
 }
 
 # List of all models that exist
-kalman_models <- list("constant_velocity" = \(x, reverse) constant_velocity(x, reverse = reverse))
+kalman_models <- list("constant_velocity" = \(x, reverse) constant_velocity(x, reverse = reverse), 
+                      "constant_acceleration" = \(x, reverse) constant_acceleration(x, reverse = reverse))
