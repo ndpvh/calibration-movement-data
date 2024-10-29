@@ -11,12 +11,12 @@
 #' 
 #' @export
 local_regression <- function(data, 
-                             degree = 1) {
+                             ...) {
     
     # Perform a loess of a given degree
     result <- loess(formula = y ~ x, 
                     data = data, 
-                    degree = degree)
+                    ...)
 
     # Once done, we can replace the results of the data with these results
     result <- data %>%
