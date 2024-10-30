@@ -76,7 +76,7 @@ kalman_filter_individual <- function(data,
     # If you want to use another package for the estimation. Ideally, both methods 
     # would converge on the same results, but if not, then I should figure out
     # why they diverge
-    if(internal) {
+    if(!internal) {
         # Extract the data to be explained and the columns to be changed
         y <- parameters[["y"]] %>% 
             dplyr::select(x, y) %>% 
@@ -91,7 +91,7 @@ kalman_filter_individual <- function(data,
 
         # Do the estimation
         smoothed_y <- kalmanfilter::kalman_filter(parameters, 
-                                                  yt, 
+                                                  y, 
                                                   smooth = reverse)
 
         # Adjust the data
