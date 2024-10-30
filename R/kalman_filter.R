@@ -42,9 +42,8 @@ kalman_filter <- function(data,
                 list()) %>% 
             tidyr::unnest(data) %>% 
             dplyr::ungroup() %>% 
-            as.data.frame()
-        print(dim(data))
-        return(data)
+            as.data.frame() %>% 
+            return()
     }
 }
 
@@ -96,7 +95,6 @@ kalman_filter_individual <- function(data,
                                                   smooth = reverse)
 
         # Adjust the data
-        print(c(nrow(data), ncol(smoothed_y$y_tt)))
         data[, cols] <- t(smoothed_y$y_tt)
 
 
