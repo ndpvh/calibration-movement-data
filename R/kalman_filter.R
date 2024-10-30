@@ -14,10 +14,11 @@
 #' @export 
 kalman_filter <- function(data,     
                           reverse = TRUE,
+                          internal = FALSE,
                           model = "constant_velocity", 
-                          .by = NULL, 
-                          check = FALSE, 
-                          assumed_variance = 0.031^2) {
+                          .by = NULL,
+                          assumed_variance = 0.031^2,
+                          check = FALSE) {
     
     # Dispatch on whether to group the data by a given variable or not
     if(is.null(.by)) {
@@ -25,7 +26,8 @@ kalman_filter <- function(data,
                                         reverse = reverse, 
                                         model = model, 
                                         check = check, 
-                                        assumed_variance = assumed_variance))
+                                        assumed_variance = assumed_variance,
+                                        internal = internal))
     } else {
         data %>% 
             dplyr::group_by(.dots = .by) %>% 
@@ -35,7 +37,8 @@ kalman_filter <- function(data,
                 kalman_filter_individual(reverse = reverse, 
                                          model = model, 
                                          check = check,
-                                         assumed_variance = assumed_variance) %>% 
+                                         assumed_variance = assumed_variance, 
+                                         internal = internal) %>% 
                 list()) %>% 
             tidyr::unnest(data) %>% 
             dplyr::ungroup() %>% 
@@ -54,9 +57,10 @@ kalman_filter <- function(data,
 #' @export 
 kalman_filter_individual <- function(data, 
                                      reverse = TRUE,
+                                     internal = FALSE,
                                      model = "constant_velocity", 
-                                     check = FALSE,
-                                     assumed_variance = 0.031^2) {
+                                     assumed_variance = 0.031^2, 
+                                     check = FALSE) {
 
     # Robustness against too little data. When there was only 1 row, errors arose
     if(nrow(data) <= 5) {
@@ -66,103 +70,150 @@ kalman_filter_individual <- function(data,
     # Get the model parameters and initial conditions
     parameters <- kalman_models[[model]](data, 
                                          reverse = reverse, 
+                                         internal = internal,
                                          assumed_variance = assumed_variance)
 
-    # Extract some of the more useful parameters, namely data and initial 
-    # conditions
-    y <- parameters[["y"]]
-    x0 <- parameters[["x0"]]
-    F0 <- parameters[["F0"]]
+    # If you want to use another package for the estimation. Ideally, both methods 
+    # would converge on the same results, but if not, then I should figure out
+    # why they diverge
+    if(internal) {
+        # Extract the data to be explained and the columns to be changed
+        y <- parameters[["y"]] %>% 
+            dplyr::select(x, y) %>% 
+            as.matrix() %>% 
+            t()
 
-    cols <- parameters[["cols_of_interest"]]
+        cols <- parameters[["cols_of_interest"]]
 
-    # Make a copy of y that will contain the smoothed data. Futhermore create 
-    # lists that will hold the estimation covariance and the Kalman gain at 
-    # each iteration
-    smoothed_y <- y
-    P <- list()
-    K <- list()
-    z <- list()
+        # Delete them from the list
+        idx <- !(names(parameters) %in% c("y", "cols_of_interest"))
+        parameters <- parameters[idx]
+
+        # Do the estimation
+        smoothed_y <- kalmanfilter::kalman_filter(parameters, 
+                                                  yt, 
+                                                  smooth = reverse)
+
+        # Adjust the data
+        data[, cols] <- t(smoothed_y$y_tt)
+
+
+    # If you want to use the internal mechanisms, then we should proceed in the 
+    # normal way.
+    } else {
+        # Extract some of the more useful parameters, namely data and initial 
+        # conditions
+        y <- parameters[["y"]]
+        x0 <- parameters[["x0"]]
+        F0 <- parameters[["F0"]]
     
-    # Iterate over the data to smooth it
-    for(i in seq_len(nrow(y))) {
-        # Perform the three steps of the Kalman filter: 
-        #   (a) kf_predict: Predict the next time step t + 1
-        #   (b) kf_innovation: Compute the Kalman gain
-        #   (c) kf_update: Update the initial prediction with the measurement
-        #
-        # Check whether this is the first iteration. If this is the case, we 
-        # should use the initial (prior) guess as prediction. If not, then we 
-        # can use the previously predicted values to create new predictions
-        if(i == 1) {
-            prediction <- list("x" = x0, 
-                               "F" = F0)
-        } else {
-            # Extract and create the parameters that change each iteration
-            # (i.e., those that depend on the time that has passed)
-            A <- parameters[["A"]](y$Delta_t[i])
-            W <- parameters[["W"]](y$Delta_t[i])
-
-            # Do the prediction
-            prediction <- kf_predict(x0, 
-                                     A, 
-                                     parameters[["u"]][i], 
-                                     parameters[["B"]], 
-                                     W, 
-                                     F0)
+        cols <- parameters[["cols_of_interest"]]
+    
+        # Make a copy of y that will contain the smoothed data. Futhermore create 
+        # lists that will hold the estimation covariance and the Kalman gain at 
+        # each iteration
+        smoothed_y <- y
+        P <- list()
+        K <- list()
+        z <- list()
+        
+        # Iterate over the data to smooth it
+        for(i in seq_len(nrow(y))) {
+            # Perform the three steps of the Kalman filter: 
+            #   (a) kf_predict: Predict the next time step t + 1
+            #   (b) kf_innovation: Compute the Kalman gain
+            #   (c) kf_update: Update the initial prediction with the measurement
+            #
+            # Check whether this is the first iteration. If this is the case, we 
+            # should use the initial (prior) guess as prediction. If not, then we 
+            # can use the previously predicted values to create new predictions
+            if(i == 1) {
+                prediction <- list("x" = x0, 
+                                   "F" = F0)
+            } else {
+                # Extract and create the parameters that change each iteration
+                # (i.e., those that depend on the time that has passed)
+                A <- parameters[["A"]](y$Delta_t[i])
+                W <- parameters[["W"]](y$Delta_t[i])
+    
+                # Do the prediction
+                prediction <- kf_predict(x0, 
+                                         A, 
+                                         parameters[["u"]][i], 
+                                         parameters[["B"]], 
+                                         W, 
+                                         F0)
+            }
+    
+            innovation <- kf_innovation(matrix(as.numeric(y[i, cols]), ncol = 1),
+                                        prediction[["x"]],
+                                        parameters[["H"]],
+                                        parameters[["V"]],
+                                        prediction[["F"]])
+    
+            result <- kf_update(prediction[["x"]], 
+                                innovation[["z"]], 
+                                parameters[["H"]],
+                                parameters[["V"]],
+                                prediction[["F"]],
+                                innovation[["K"]])
+    
+            # Save the results in the smoothed dataset and in the list of 
+            # estimation uncertainties
+            smoothed_y[i, cols] <- result[["x"]][which(cols %in% c("x", "y"))]
+            P[[i]] <- t(result[["F"]]) %*% result[["F"]]
+            K[[i]] <- innovation[["K"]]
+            z[[i]] <- innovation[["z"]]
+    
+            # Overwrite the initial conditions with the newly acquired values
+            x0 <- result[["x"]]
+            F0 <- result[["F"]]
+        }
+    
+        # If you want to check the autocorrelation assumptions in the innovations, 
+        # print out the results
+        if(check) {
+            idx <- y$original
+            z <- do.call("cbind", z[idx])
+    
+            message(paste0("Correlations between the innovations are ", 
+                           cor(z[1, 2:ncol(z) - 1], z[1, 2:ncol(z)]), 
+                           " and ", 
+                           cor(z[2, 2:ncol(z) - 1], z[2, 2:ncol(z)])))
+    
+            dist_1 <- data %>% 
+                dplyr::mutate(dist = sqrt((x_original - x)^2 + (y_original - y)^2)) %>% 
+                dplyr::select(dist) %>% 
+                unlist() %>% 
+                as.numeric()
+    
+            idx <- smoothed_y$original
+            dist_2 <- data %>% 
+                dplyr::mutate(dist = sqrt((x_original - smoothed_y$x[idx])^2 + (y_original - smoothed_y$y[idx])^2)) %>% 
+                dplyr::select(dist) %>% 
+                unlist() %>% 
+                as.numeric()
+    
+            print(sd(dist_1))
+            print(sd(dist_2))
+            browser()
+        }
+    
+        # If you reversed the data, delete the reversed data and only keep the new 
+        # (smoothed) values for the original ones
+        if(reverse) {
+            smoothed_y <- smoothed_y %>% 
+                dplyr::filter(original) %>% 
+                dplyr::select(-original)
         }
 
-        innovation <- kf_innovation(matrix(as.numeric(y[i, cols]), ncol = 1),
-                                    prediction[["x"]],
-                                    parameters[["H"]],
-                                    parameters[["V"]],
-                                    prediction[["F"]])
-
-        result <- kf_update(prediction[["x"]], 
-                            innovation[["z"]], 
-                            parameters[["H"]],
-                            parameters[["V"]],
-                            prediction[["F"]],
-                            innovation[["K"]])
-
-        # Save the results in the smoothed dataset and in the list of 
-        # estimation uncertainties
-        smoothed_y[i, cols] <- result[["x"]][which(cols %in% c("x", "y"))]
-        P[[i]] <- t(result[["F"]]) %*% result[["F"]]
-        K[[i]] <- innovation[["K"]]
-        z[[i]] <- innovation[["z"]]
-
-        # Overwrite the initial conditions with the newly acquired values
-        x0 <- result[["x"]]
-        F0 <- result[["F"]]
-    }
-
-    # If you want to check the autocorrelation assumptions in the innovations, 
-    # print out the results
-    if(check) {
-        idx <- y$original
-        z <- do.call("cbind", z[idx])
-
-        message(paste0("Correlations between the innovations are ", 
-                       cor(z[1, 2:ncol(z) - 1], z[1, 2:ncol(z)]), 
-                       " and ", 
-                       cor(z[2, 2:ncol(z) - 1], z[2, 2:ncol(z)])))
-    }
-
-    # If you reversed the data, delete the reversed data and only keep the new 
-    # (smoothed) values for the original ones
-    if(reverse) {
-        smoothed_y <- smoothed_y %>% 
-            dplyr::filter(original) %>% 
-            dplyr::select(-original)
-    }
-
-    # Replace the original dataset with the smoothed ones
-    data <- data %>% 
-        dplyr::select(-x, -y) %>% 
-        dplyr::full_join(smoothed_y, by = "time") %>% 
-        dplyr::select(-Delta_t, -index) %>% 
-        dplyr::relocate(time, x, y)
+        # Replace the original dataset with the smoothed ones
+        data <- data %>% 
+            dplyr::select(-x, -y) %>% 
+            dplyr::full_join(smoothed_y, by = "time") %>% 
+            dplyr::select(-Delta_t, -index) %>% 
+            dplyr::relocate(time, x, y)
+    }        
         
     return(data)
 }
@@ -267,6 +318,7 @@ kf_update <- function(x,
 # Constant velocity model: Transform data to and create the parameters
 constant_velocity <- function(data,
                               reverse = TRUE, 
+                              internal = FALSE,
                               assumed_variance = 0.031^2) {
     # Measurements
     y <- data %>% 
@@ -279,7 +331,7 @@ constant_velocity <- function(data,
     # If you want to smooth the data forwards and backwards, add the reversed 
     # data to `y`. In these data, \Delta t should still be positive, as time 
     # cannot be negative in the constant velocity model
-    if(reverse) {
+    if(reverse & internal) {
         reversed_y <- data %>% 
             dplyr::select(time, x, y) %>% 
             dplyr::arrange(time) %>% 
@@ -362,34 +414,53 @@ constant_velocity <- function(data,
         chol()
 
     # Define the initial conditions. Very vague but data-informed priors
-    x0 <- c(mean(data$x, na.rm = TRUE), 
-            mean(data$y, na.rm = TRUE),
+    x0 <- c(mean(observed_data$x, na.rm = TRUE), 
+            mean(observed_data$y, na.rm = TRUE),
             mean(velocity$x, na.rm = TRUE),
             mean(velocity$y, na.rm = TRUE)) %>% 
         matrix(ncol = 1)
     
-    F0 <- cbind(rbind(cov(cbind(observed_data$x, observed_data$y), 
-                          use = "pairwise.complete.obs"), 
-                      matrix(0, nrow = 2, ncol = 2)),
-                rbind(matrix(0, nrow = 2, ncol = 2), 
-                      cov(cbind(velocity$x, velocity$y), 
-                          use = "pairwise.complete.obs")))    
-    F0 <- tryCatch(chol(F0), 
-                   error = function(e) {
-                      stop("Try again. F0 didn't work")
-                   })
+    F0 <- cov(cbind(observed_data$x, 
+                    observed_data$y, 
+                    c(NA, velocity$x), 
+                    c(NA, velocity$y)), 
+              use = "pairwise.complete.obs") %>% 
+        diag() %>% 
+        diag() %>% 
+        chol()
 
-    # Put everything in a list and return
-    return(list("y" = y, 
-                "u" = numeric(nrow(y)),
-                "x0" = x0, 
-                "F0" = F0,
-                "A" = A, 
-                "B" = B,
-                "W" = W, 
-                "H" = H, 
-                "V" = V,
-                "cols_of_interest" = cols_of_interest))
+    # Put everything in a list and return. This list looks different for the 
+    # internal functions than for the kalman_filter function of the 
+    # package kalmanfilter.
+    if(internal) {
+        return(list("y" = y,                    # Data to smooth
+                    "u" = numeric(nrow(y)),     # External variables
+                    "x0" = x0,                  # Prior mean
+                    "F0" = F0,                  # Prior variance
+                    "A" = A,                    # Transition matrix movement equation
+                    "B" = B,                    # Slope for external variables
+                    "W" = W,                    # Covariance matrix movement equation
+                    "H" = H,                    # Measurement matrix
+                    "V" = V,                    # Covariance matrix measurement equation
+                    "cols_of_interest" = cols_of_interest))
+    } else {
+        return(list("y" = y, 
+                    "B0" = x0, 
+                    "P0" = t(F0) %*% F0,
+                    "Dm" = lapply(1:nrow(y), \(x) matrix(0, nrow = 4, ncol = 1)) %>% 
+                        make_array(),
+                    "Am" = lapply(1:nrow(y), \(x) matrix(0, nrow = 2, ncol = 1)) %>% 
+                        make_array(),
+                    "Fm" = lapply(1:nrow(y), \(i) A(y$Delta_t[i])) %>% 
+                        make_array(),
+                    "Qm" = lapply(1:nrow(y), \(i) W(y$Delta_t[i])) %>% 
+                        make_array(),
+                    "Rm" = lapply(1:nrow(y), \(x) t(V) %*% V) %>% 
+                        make_array(),
+                    "Hm" = lapply(1:nrow(y), \(x) H) %>% 
+                        make_array(),
+                    "cols_of_interest" = cols_of_interest))
+    }
 }
 
 # Constant acceleration model: Transform data to and create the parameters
@@ -470,8 +541,6 @@ constant_acceleration <- function(data,
     var_w <- c(var(acceleration$x), var(acceleration$y)) - 4 * mean(acceleration$Delta_t)^(-4) * assumed_variance
     var_w <- ifelse(var_w <= 1e-10, 1e-10, var_w)
 
-    cov_w <- cov(velocity$x, velocity$y)
-
     # In some sources called Q, while W is reserved for just the errors 
     # themselves
     W <- function(Delta_t) {
@@ -498,30 +567,59 @@ constant_acceleration <- function(data,
             mean(velocity$x, na.rm = TRUE),
             mean(velocity$y, na.rm = TRUE)) %>% 
         matrix(ncol = 1)
-    F0 <- cbind(rbind(cov(cbind(observed_data$x, observed_data$y), 
-                          use = "pairwise.complete.obs"), 
-                      matrix(0, nrow = 2, ncol = 2)),
-                rbind(matrix(0, nrow = 2, ncol = 2), 
-                      cov(cbind(velocity$x, velocity$y), 
-                          use = "pairwise.complete.obs")))    
-    F0 <- tryCatch(chol(F0), 
-                   error = function(e) {
-                      stop("Try again. F0 didn't work")
-                   })
+    
+    F0 <- cov(cbind(observed_data$x, 
+                    observed_data$y, 
+                    c(NA, velocity$x), 
+                    c(NA, velocity$y)), 
+              use = "pairwise.complete.obs") %>% 
+        diag() %>% 
+        diag() %>% 
+        chol()
 
     # Put everything in a list and return
-    return(list("y" = y, 
-                "u" = numeric(nrow(y)),
-                "x0" = x0, 
-                "F0" = F0,
-                "A" = A, 
-                "B" = B,
-                "W" = W, 
-                "H" = H, 
-                "V" = V,
-                "cols_of_interest" = cols_of_interest))
+    # Put everything in a list and return. This list looks different for the 
+    # internal functions than for the kalman_filter function of the 
+    # package kalmanfilter.
+    if(internal) {
+        return(list("y" = y,                    # Data to smooth
+                    "u" = numeric(nrow(y)),     # External variables
+                    "x0" = x0,                  # Prior mean
+                    "F0" = F0,                  # Prior variance
+                    "A" = A,                    # Transition matrix movement equation
+                    "B" = B,                    # Slope for external variables
+                    "W" = W,                    # Covariance matrix movement equation
+                    "H" = H,                    # Measurement matrix
+                    "V" = V,                    # Covariance matrix measurement equation
+                    "cols_of_interest" = cols_of_interest))
+    } else {
+        return(list("y" = y, 
+                    "B0" = x0, 
+                    "P0" = t(F0) %*% F0,
+                    "Dm" = lapply(1:nrow(y), \(x) matrix(0, nrow = 4, ncol = 1)) %>% 
+                        make_array(),
+                    "Am" = lapply(1:nrow(y), \(x) matrix(0, nrow = 2, ncol = 1)) %>% 
+                        make_array(),
+                    "Fm" = lapply(1:nrow(y), \(i) A(y$Delta_t[i])) %>% 
+                        make_array(),
+                    "Qm" = lapply(1:nrow(y), \(i) W(y$Delta_t[i])) %>% 
+                        make_array(),
+                    "Rm" = lapply(1:nrow(y), \(x) t(V) %*% V) %>% 
+                        make_array(),
+                    "Hm" = lapply(1:nrow(y), \(x) H) %>% 
+                        make_array(),
+                    "cols_of_interest" = cols_of_interest))
+    }
 }
 
 # List of all models that exist
 kalman_models <- list("constant_velocity" = constant_velocity, 
                       "constant_acceleration" = constant_acceleration)
+
+# Utility function that will bind a list of matrices together in a 3D array. 
+# Allows for changes in the transition matrix etc based on the Delta t of 
+# those trials.
+make_array <- function(x) {
+    return(do.call(abind::abind, 
+                   c(x, along = 3)))
+}
