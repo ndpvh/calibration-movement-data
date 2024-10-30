@@ -300,16 +300,18 @@ parabola <- function(data,
         y_hat <- b0 + b1 * co[1] + b2 * co[1]^2
 
         D <- b1^2 - 4 * b2 * (b0 - co[2])
-        x_hat <- c((-b1 + sqrt(D)) / (2 * b2), 
-                   (-b1 - sqrt(D)) / (2 * b2))
-        x_hat <- x_hat[which.min((x_hat - co[1])^2)]
 
         # Additional check: If the discriminant is smaller than 0, you can't have 
         # a good estimate of `x_hat`. If this is the case, just use the original 
         # coordinate
         if(D < 0) {
             x_hat <- co[1]
+        } else {
+            x_hat <- c((-b1 + sqrt(D)) / (2 * b2), 
+                       (-b1 - sqrt(D)) / (2 * b2))
+            x_hat <- x_hat[which.min((x_hat - co[1])^2)]
         }
+        
     } else {
         # Extract coefficients
         b0 <- lm_x$coefficients[1]
@@ -326,18 +328,21 @@ parabola <- function(data,
         # Create predicted (x, y) coordinates based on the observed coordinates, 
         # using a similar approach as above
         D <- b1^2 - 4 * b2 * (b0 - co[1])
-        y_hat <- c((-b1 + sqrt(D)) / (2 * b2), 
-                   (-b1 - sqrt(D)) / (2 * b2))
-        y_hat <- y_hat[which.min((y_hat - co[2])^2)]
-
-        x_hat <- b0 + b1 * co[2] + b2 * co[2]^2
 
         # Additional check: If the discriminant is smaller than 0, you can't have 
         # a good estimate of `y_hat`. If this is the case, just use the original 
         # coordinate
         if(D < 0) {
             y_hat <- co[2]
+        } else {
+            y_hat <- c((-b1 + sqrt(D)) / (2 * b2), 
+                       (-b1 - sqrt(D)) / (2 * b2))
+            y_hat <- y_hat[which.min((y_hat - co[2])^2)]
         }
+
+        x_hat <- b0 + b1 * co[2] + b2 * co[2]^2
+
+        
     }
 
     # If the data were rotated, rotate them back now and replace the predicted 
