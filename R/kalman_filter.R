@@ -29,8 +29,8 @@ kalman_filter <- function(data,
                                         assumed_variance = assumed_variance,
                                         internal = internal))
     } else {
-        data %>% 
-            dplyr::group_by(.dots = .by) %>% 
+        data <- data %>% 
+            dplyr::group_by(dplyr::across(tidyselect::all_of(.by))) %>% 
             tidyr::nest() %>% 
             dplyr::mutate(data = data %>% 
                 as.data.frame() %>% 
@@ -42,8 +42,9 @@ kalman_filter <- function(data,
                 list()) %>% 
             tidyr::unnest(data) %>% 
             dplyr::ungroup() %>% 
-            as.data.frame() %>% 
-            return()
+            as.data.frame()
+        print(dim(data))
+        return(data)
     }
 }
 
@@ -95,6 +96,7 @@ kalman_filter_individual <- function(data,
                                                   smooth = reverse)
 
         # Adjust the data
+        print(c(nrow(data), ncol(smoothed_y$y_tt)))
         data[, cols] <- t(smoothed_y$y_tt)
 
 
@@ -196,7 +198,6 @@ kalman_filter_individual <- function(data,
     
             print(sd(dist_1))
             print(sd(dist_2))
-            browser()
         }
     
         # If you reversed the data, delete the reversed data and only keep the new 
@@ -213,7 +214,7 @@ kalman_filter_individual <- function(data,
             dplyr::full_join(smoothed_y, by = "time") %>% 
             dplyr::select(-Delta_t, -index) %>% 
             dplyr::relocate(time, x, y)
-    }        
+    }
         
     return(data)
 }
@@ -436,7 +437,7 @@ constant_velocity <- function(data,
         return(list("y" = y,                    # Data to smooth
                     "u" = numeric(nrow(y)),     # External variables
                     "x0" = x0,                  # Prior mean
-                    "F0" = F0,                  # Prior variance
+                    "F0" = F0,                  # Prior covariance
                     "A" = A,                    # Transition matrix movement equation
                     "B" = B,                    # Slope for external variables
                     "W" = W,                    # Covariance matrix movement equation
@@ -444,20 +445,20 @@ constant_velocity <- function(data,
                     "V" = V,                    # Covariance matrix measurement equation
                     "cols_of_interest" = cols_of_interest))
     } else {
-        return(list("y" = y, 
-                    "B0" = x0, 
-                    "P0" = t(F0) %*% F0,
-                    "Dm" = lapply(1:nrow(y), \(x) matrix(0, nrow = 4, ncol = 1)) %>% 
+        return(list("y" = y,                    # Data to smooth
+                    "B0" = x0,                  # Prior mean
+                    "P0" = t(F0) %*% F0,        # Prior covariance
+                    "Dm" = lapply(1:nrow(y), \(x) matrix(0, nrow = 4, ncol = 1)) %>%    # Intercept movement equation
                         make_array(),
-                    "Am" = lapply(1:nrow(y), \(x) matrix(0, nrow = 2, ncol = 1)) %>% 
+                    "Am" = lapply(1:nrow(y), \(x) matrix(0, nrow = 2, ncol = 1)) %>%    # Intercept measurement equation
                         make_array(),
-                    "Fm" = lapply(1:nrow(y), \(i) A(y$Delta_t[i])) %>% 
+                    "Fm" = lapply(1:nrow(y), \(i) A(y$Delta_t[i])) %>%                  # Transition matrix movement equation
                         make_array(),
-                    "Qm" = lapply(1:nrow(y), \(i) W(y$Delta_t[i])) %>% 
+                    "Qm" = lapply(1:nrow(y), \(i) W(y$Delta_t[i])) %>%                  # Covariance matrix movement equation
                         make_array(),
-                    "Rm" = lapply(1:nrow(y), \(x) t(V) %*% V) %>% 
+                    "Rm" = lapply(1:nrow(y), \(x) t(V) %*% V) %>%                       # Covariance matrix measurement equation
                         make_array(),
-                    "Hm" = lapply(1:nrow(y), \(x) H) %>% 
+                    "Hm" = lapply(1:nrow(y), \(x) H) %>%                                # Measurement matrix
                         make_array(),
                     "cols_of_interest" = cols_of_interest))
     }
@@ -479,7 +480,7 @@ constant_acceleration <- function(data,
     # If you want to smooth the data forwards and backwards, add the reversed 
     # data to `y`. In these data, \Delta t should still be positive, as time 
     # cannot be negative in the constant velocity model
-    if(reverse) {
+    if(reverse & internal) {
         reversed_y <- data %>% 
             dplyr::select(time, x, y) %>% 
             dplyr::arrange(time) %>% 
@@ -586,7 +587,7 @@ constant_acceleration <- function(data,
         return(list("y" = y,                    # Data to smooth
                     "u" = numeric(nrow(y)),     # External variables
                     "x0" = x0,                  # Prior mean
-                    "F0" = F0,                  # Prior variance
+                    "F0" = F0,                  # Prior covariance
                     "A" = A,                    # Transition matrix movement equation
                     "B" = B,                    # Slope for external variables
                     "W" = W,                    # Covariance matrix movement equation
@@ -594,20 +595,20 @@ constant_acceleration <- function(data,
                     "V" = V,                    # Covariance matrix measurement equation
                     "cols_of_interest" = cols_of_interest))
     } else {
-        return(list("y" = y, 
-                    "B0" = x0, 
-                    "P0" = t(F0) %*% F0,
-                    "Dm" = lapply(1:nrow(y), \(x) matrix(0, nrow = 4, ncol = 1)) %>% 
+        return(list("y" = y,                    # Data to smooth
+                    "B0" = x0,                  # Prior mean
+                    "P0" = t(F0) %*% F0,        # Prior covariance
+                    "Dm" = lapply(1:nrow(y), \(x) matrix(0, nrow = 4, ncol = 1)) %>%    # Intercept movement equation
                         make_array(),
-                    "Am" = lapply(1:nrow(y), \(x) matrix(0, nrow = 2, ncol = 1)) %>% 
+                    "Am" = lapply(1:nrow(y), \(x) matrix(0, nrow = 2, ncol = 1)) %>%    # Intercept measurement equation
                         make_array(),
-                    "Fm" = lapply(1:nrow(y), \(i) A(y$Delta_t[i])) %>% 
+                    "Fm" = lapply(1:nrow(y), \(i) A(y$Delta_t[i])) %>%                  # Transition matrix movement equation
                         make_array(),
-                    "Qm" = lapply(1:nrow(y), \(i) W(y$Delta_t[i])) %>% 
+                    "Qm" = lapply(1:nrow(y), \(i) W(y$Delta_t[i])) %>%                  # Covariance matrix movement equation
                         make_array(),
-                    "Rm" = lapply(1:nrow(y), \(x) t(V) %*% V) %>% 
+                    "Rm" = lapply(1:nrow(y), \(x) t(V) %*% V) %>%                       # Covariance matrix measurement equation
                         make_array(),
-                    "Hm" = lapply(1:nrow(y), \(x) H) %>% 
+                    "Hm" = lapply(1:nrow(y), \(x) H) %>%                                # Measurement matrix
                         make_array(),
                     "cols_of_interest" = cols_of_interest))
     }
