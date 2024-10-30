@@ -466,6 +466,7 @@ constant_velocity <- function(data,
 # Constant acceleration model: Transform data to and create the parameters
 constant_acceleration <- function(data,
                                   reverse = TRUE, 
+                                  internal = FALSE,
                                   assumed_variance = 0.031^2) {
     # Measurements
     y <- data %>% 
