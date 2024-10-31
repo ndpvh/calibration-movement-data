@@ -141,3 +141,67 @@ testthat::test_that("Kalman filter: Preserves other variables", {
 
     testthat::expect_true("another_variable" %in% colnames(tst))
 })
+
+testthat::test_that("Kalman filter: Prediction step", {
+    # Create a function that will compute the manual x value. Only works for 
+    # 2D arrays, assuming that if Kalman prediction works for 2D it will work 
+    # for higher dimensions as well.
+    manual_x <- function(x, F) {
+        return(matrix(c(F[1, 1] * x[1] + F[1, 2] * x[2], 
+                        F[2, 1] * x[1] + F[2, 2] * x[2]), 
+                      ncol = 1))
+    }
+
+    # Create a function that will compute the manual P value. Only works for 
+    # 2D arrays, assuming that if Kalman prediction works for 2D it will work 
+    # for higher dimensions as well.
+    manual_P <- function(P, F, W) {
+        c(F[1, 1]^2 * P[1, 1] + 2 * F[1, 2] * F[1, 1] * P[1, 2] + F[1, 2] * P[2, 2], 
+          F[1, 1] * (F[2, 1] * P[1, 1] + F[2, 2] * P[1, 2]) + F[1, 2] * (F[2, 1] * P[2, 1] + F[2, 2] * P[2, 2]), 
+          F[1, 1] * (F[2, 1] * P[1, 1] + F[2, 2] * P[1, 2]) + F[1, 2] * (F[2, 1] * P[2, 1] + F[2, 2] * P[2, 2]), 
+          F[2, 1]^2 * P[1, 1] + 2 * F[2, 1] * F[2, 2] * P[1, 2] + F[2, 2]^2 * P[2, 2]) %>% 
+            matrix(nrow = 2, ncol = 2) %>% 
+            `+` (W) %>% 
+            return()
+    }
+
+    # Create lists of potential possibilities
+    x0 <- list(c(1, 1), c(1, 0), c(0, 1), c(0, 0))
+    P0 <- list(matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2), 
+               matrix(c(2, 0, 0, 2), nrow = 2, ncol = 2), 
+               matrix(c(2, 0.5, 0.5, 2), nrow = 2, ncol = 2))
+    F <- list(matrix(c(1, 0, 0, 1), nrow = 2, ncol = 2), 
+              matrix(c(1, 0.5, 0, 1), nrow = 2, ncol = 2), 
+              matrix(c(1, 0, 0, 0.5), nrow = 2, ncol = 2))
+    W <- P0
+
+    # Do the manual and nonmanual translations and put the results in gigantic 
+    # lists
+    ref <- list()
+    tst <- list()
+    f <- 1
+    for(i in seq_along(x0)) {
+        for(j in seq_along(P0)) {
+            for(k in seq_along(F)) {
+                for(l in seq_along(W)) {
+                    # Manual translations
+                    ref[[f]] <- list("x" = manual_x(x0[[i]], F[[k]]), 
+                                     "P" = manual_P(P0[[j]], F[[k]], W[[l]]) %>% 
+                                        chol())
+
+                    # Through kf_predict
+                    tst[[f]] <- nameless::kf_predict(x0[[i]],
+                                                     P0[[j]] %>% chol(), 
+                                                     F[[k]], 
+                                                     W[[l]] %>% chol())
+
+                    # Update the index f
+                    f <- f + 1
+                }
+            }
+        }
+    }
+
+    # Do the test
+    testthat::expect_equal(tst, ref)
+})
