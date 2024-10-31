@@ -244,11 +244,11 @@ kf_predict <- function(x,
     # matrices. For this, use and predict values of the Cholesky decomposition 
     # and use the R matrix of a QR decomposition to update this Cholesky.
     x <- A %*% x + B %*% u
-    # F <- rbind(F %*% t(A), W) %>% 
-    #     qr() %>% 
-    #     qr.R()
-    F <- (A %*% t(F) %*% F %*% t(A) + W) %>% 
-        chol()
+    F <- rbind(F %*% t(A), W) %>% 
+        qr() %>% 
+        qr.R()
+    # F <- (A %*% t(F) %*% F %*% t(A) + W) %>% 
+    #     chol()
 
     return(list("x" = matrix(x, ncol = 1), 
                 "F" = F))
@@ -306,7 +306,8 @@ kf_update <- function(x,
                       F, 
                       K) {
     x <- x + K %*% z
-    F <- rbind(F %*% t(diag(nrow(F)) - K %*% H), V %*% t(K)) %>% 
+    # F <- rbind(F %*% t(diag(nrow(F)) - K %*% H), V %*% t(K)) %>% 
+    F <- rbind(F %*% t(F) - K %*% H, V %*% t(K)) %>% 
         qr() %>% 
         qr.R()
     
