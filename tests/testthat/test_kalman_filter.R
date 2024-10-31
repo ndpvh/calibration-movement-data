@@ -142,6 +142,13 @@ testthat::test_that("Kalman filter: Preserves other variables", {
     testthat::expect_true("another_variable" %in% colnames(tst))
 })
 
+
+
+
+
+################################################################################
+# TESTS FOR SEPARATE KALMAN FUNCTIONS
+
 testthat::test_that("Kalman filter: Prediction step", {
     # Create a function that will compute the manual x value. Only works for 
     # 2D arrays, assuming that if Kalman prediction works for 2D it will work 
@@ -197,6 +204,140 @@ testthat::test_that("Kalman filter: Prediction step", {
 
                     # Update the index f
                     f <- f + 1
+                }
+            }
+        }
+    }
+
+    # Do the test
+    testthat::expect_equal(tst, ref)
+})
+
+testthat::test_that("Kalman filter: Innovation step", {
+    # Create a function that will compute the manual y value. Only works for 
+    # 2D arrays as end product, and 4D arrays as start product (on the movement
+    # level), assuming that if Kalman innovation works for this dimensionality, 
+    # it will work for greater dimensions as well.
+    manual_y <- function(z, x, H) {
+        c(z[1] - H[1, 1] * x[1] - H[1, 2] * x[2] - H[1, 3] * x[3] - H[1, 4] * x[4], 
+          z[2] - H[2, 1] * x[1] - H[2, 2] * x[2] - H[2, 3] * x[3] - H[2, 4] * x[4]) %>% 
+            matrix(ncol = 1) %>% 
+            return()
+    }
+    
+    # Create a function that will compute the manual S value. Only works for 
+    # 2D arrays as end product, and 4D arrays as start product (on the movement
+    # level), assuming that if Kalman innovation works for this dimensionality, 
+    # it will work for greater dimensions as well.
+    manual_S <- function(P, H, R) {
+        # Create the first intermediary result, multiplication of H with P. Done 
+        # in such a way that we don't need the byrow = TRUE argument when 
+        # creating a matrix
+        W <- c(H[1, 1] * P[1, 1] + H[1, 2] * P[1, 2] + H[1, 3] * P[1, 3] + H[1, 4] * P[1, 4], 
+               H[2, 1] * P[1, 1] + H[2, 2] * P[1, 2] + H[2, 3] * P[1, 3] + H[2, 4] * P[1, 4], 
+               
+               H[1, 1] * P[2, 1] + H[1, 2] * P[2, 2] + H[1, 3] * P[2, 3] + H[1, 4] * P[2, 4], 
+               H[2, 1] * P[2, 1] + H[2, 2] * P[2, 2] + H[2, 3] * P[2, 3] + H[2, 4] * P[2, 4], 
+               
+               H[1, 1] * P[3, 1] + H[1, 2] * P[3, 2] + H[1, 3] * P[3, 3] + H[1, 4] * P[3, 4], 
+               H[2, 1] * P[3, 1] + H[2, 2] * P[3, 2] + H[2, 3] * P[3, 3] + H[2, 4] * P[3, 4], 
+               
+               H[1, 1] * P[4, 1] + H[1, 2] * P[4, 2] + H[1, 3] * P[4, 3] + H[1, 4] * P[4, 4], 
+               H[2, 1] * P[4, 1] + H[2, 2] * P[4, 2] + H[2, 3] * P[4, 3] + H[2, 4] * P[4, 4]) %>% 
+            matrix(nrow = 2, ncol = 4)
+
+        # Continue the multiplication with the transpose of H.
+        HPH <- c(W[1, 1] * H[1, 1] + W[1, 2] * H[1, 2] + W[1, 3] * H[1, 3] + W[1, 4] * H[1, 4], 
+                 W[2, 1] * H[1, 1] + W[2, 2] * H[1, 2] + W[2, 3] * H[1, 3] + W[2, 4] * H[1, 4], 
+                 W[1, 1] * H[2, 1] + W[1, 2] * H[2, 2] + W[1, 3] * H[2, 3] + W[1, 4] * H[2, 4], 
+                 W[2, 1] * H[2, 1] + W[2, 2] * H[2, 2] + W[2, 3] * H[2, 3] + W[2, 4] * H[2, 4]) %>% 
+            matrix(nrow = 2, ncol = 2)
+
+        # And finalize the calculations
+        c(HPH[1, 1] + R[1, 1], 
+          HPH[2, 1] + R[2, 1], 
+          HPH[1, 2] + R[1, 2], 
+          HPH[2, 2] + R[2, 2]) %>% 
+            matrix(nrow = 2, ncol = 2) %>% 
+            return()
+    }
+
+    # Create a function that will compute the manual P value. Only works for 
+    # 2D arrays, assuming that if Kalman prediction works for 2D it will work 
+    # for higher dimensions as well.
+    manual_K <- function(P, H, S) {
+        # Create the first intermediary result, multiplication of P with H^T. 
+        # Done in such a way that we don't need the byrow = TRUE argument when 
+        # creating a matrix
+        W <- c(P[1, 1] * H[1, 1] + P[1, 2] * H[1, 2] + P[1, 3] * H[1, 3] + P[1, 4] * H[1, 4], 
+               P[2, 1] * H[1, 1] + P[2, 2] * H[1, 2] + P[2, 3] * H[1, 3] + P[2, 4] * H[1, 4], 
+               P[3, 1] * H[1, 1] + P[3, 2] * H[1, 2] + P[3, 3] * H[1, 3] + P[3, 4] * H[1, 4], 
+               P[4, 1] * H[1, 1] + P[4, 2] * H[1, 2] + P[4, 3] * H[1, 3] + P[4, 4] * H[1, 4], 
+               
+               P[1, 1] * H[2, 1] + P[1, 2] * H[2, 2] + P[1, 3] * H[2, 3] + P[1, 4] * H[2, 4], 
+               P[2, 1] * H[2, 1] + P[2, 2] * H[2, 2] + P[2, 3] * H[2, 3] + P[2, 4] * H[2, 4], 
+               P[3, 1] * H[2, 1] + P[3, 2] * H[2, 2] + P[3, 3] * H[2, 3] + P[3, 4] * H[2, 4], 
+               P[4, 1] * H[2, 1] + P[4, 2] * H[2, 2] + P[4, 3] * H[2, 3] + P[4, 4] * H[2, 4]) %>% 
+            matrix(nrow = 4, ncol = 2)
+
+        # Compute the determinant of the matrix S
+        det_S <- (S[1, 1] * S[2, 2] - S[1, 2]^2)^(-1)
+
+        # Compute the Kalman filter and return
+        c(W[1, 1] * S[2, 2] - W[1, 2] * S[1, 2], 
+          W[2, 1] * S[2, 2] - W[2, 2] * S[1, 2], 
+          W[3, 1] * S[2, 2] - W[3, 2] * S[1, 2], 
+          W[4, 1] * S[2, 2] - W[4, 2] * S[1, 2],
+          
+          W[1, 2] * S[1, 1] - W[1, 1] * S[1, 2], 
+          W[2, 2] * S[1, 1] - W[2, 1] * S[1, 2], 
+          W[3, 2] * S[1, 1] - W[3, 1] * S[1, 2], 
+          W[4, 2] * S[1, 1] - W[4, 1] * S[1, 2]) %>% 
+            `*` (det_S) %>% 
+            matrix(nrow = 4, ncol = 2) %>% 
+            return()
+    }
+
+    # Create lists of potential possibilities
+    x <- list(c(1, 1, 1, 1), c(1, 0, 1, 0), c(0, 1, 0, 1), c(0, 0, 0, 0)) %>% 
+        lapply(\(x) matrix(x, ncol = 1))
+    z <- lapply(x, \(x) x[1:2, , drop = FALSE] - 0.1)
+    P <- list(diag(4), 
+              2 * diag(4), 
+              2 * diag(4) + 0.5)
+    R <- list(0.25 * diag(2), 
+              0.10 * diag(2), 
+              0.25 * diag(2) + 0.05)
+    H <- list(matrix(c(1, 0, 0, 0, 0, 1, 0, 0), nrow = 2, ncol = 4, byrow = TRUE), 
+              matrix(c(1, 0, 0.1, 0, 0, 1, 0, 0.1), nrow = 2, ncol = 4, byrow = TRUE), 
+              matrix(rep(1, each = 8), nrow = 2, ncol = 4))
+
+    # Do the manual and nonmanual translations and put the results in gigantic 
+    # lists
+    ref <- list()
+    tst <- list()
+    f <- 1
+    for(i in seq_along(z)) {
+        for(j in seq_along(x)) {
+            for(k in seq_along(P)) {
+                for(l in seq_along(H)) {
+                    for(m in seq_along(R)) {
+                        # Manual translations
+                        S <- manual_S(P[[k]], H[[l]], R[[m]])
+                        ref[[f]] <- list("y" = manual_y(z[[i]], x[[j]], H[[l]]), 
+                                         "S" =  chol(S), 
+                                         "K" = manual_K(P[[k]], H[[l]], S))
+    
+                        # Through kf_predict
+                        tst[[f]] <- nameless::kf_innovation(z[[i]],
+                                                            x[[j]],
+                                                            P[[k]] %>% chol(), 
+                                                            H[[l]], 
+                                                            R[[m]] %>% chol())
+    
+                        # Update the index f
+                        f <- f + 1
+                    }
                 }
             }
         }
