@@ -346,3 +346,118 @@ testthat::test_that("Kalman filter: Innovation step", {
     # Do the test
     testthat::expect_equal(tst, ref)
 })
+
+testthat::test_that("Kalman filter: Updating step", {
+    # Create a function that will compute the manual x value. Only works for 
+    # 4D arrays as end product, but with 2D measurements, assuming that if 
+    # Kalman updating works for this dimensionality, it will work for greater 
+    # dimensions as well.
+    manual_x <- function(x, y, K) {
+        c(x[1] + K[1, 1] * y[1] + K[1, 2] * y[2], 
+          x[2] + K[2, 1] * y[1] + K[2, 2] * y[2], 
+          x[3] + K[3, 1] * y[1] + K[3, 2] * y[2], 
+          x[4] + K[4, 1] * y[1] + K[4, 2] * y[2]) %>% 
+            matrix(ncol = 1) %>% 
+            return()
+    }
+    
+    # Create a function that will compute the manual P value. Only works for 
+    # 4D arrays as end product, but with 2D measurements, assuming that if 
+    # Kalman updating works for this dimensionality, it will work for greater 
+    # dimensions as well.
+    manual_P <- function(P, K, H) {
+        # Create the first intermediary result, multiplication of P with H and 
+        # its subtraction from the identity matrix. Done in such a way that we 
+        # don't need the byrow = TRUE argument when creating a matrix
+        W <- c(1 - (K[1, 1] * H[1, 1] + K[1, 2] * H[2, 1]), 
+               -(K[2, 1] * H[1, 1] + K[2, 2] * H[2, 1]), 
+               -(K[3, 1] * H[1, 1] + K[3, 2] * H[2, 1]),
+               -(K[4, 1] * H[1, 1] + K[4, 2] * H[2, 1]), 
+               
+               -(K[1, 1] * H[1, 2] + K[1, 2] * H[2, 2]), 
+               1 - (K[2, 1] * H[1, 2] + K[2, 2] * H[2, 2]), 
+               -(K[3, 1] * H[1, 2] + K[3, 2] * H[2, 2]),
+               -(K[4, 1] * H[1, 2] + K[4, 2] * H[2, 2]), 
+               
+               -(K[1, 1] * H[1, 3] + K[1, 2] * H[2, 3]), 
+               -(K[2, 1] * H[1, 3] + K[2, 2] * H[2, 3]), 
+               1 - (K[3, 1] * H[1, 3] + K[3, 2] * H[2, 3]),
+               -(K[4, 1] * H[1, 3] + K[4, 2] * H[2, 3]),
+               
+               -(K[1, 1] * H[1, 4] + K[1, 2] * H[2, 4]), 
+               -(K[2, 1] * H[1, 4] + K[2, 2] * H[2, 4]), 
+               -(K[3, 1] * H[1, 4] + K[3, 2] * H[2, 4]),
+               1 - (K[4, 1] * H[1, 4] + K[4, 2] * H[2, 4])) %>% 
+            matrix(nrow = 4, ncol = 4)
+
+        # Finalize the calculations
+        c(W[1, 1] * P[1, 1] + W[1, 2] * P[1, 2] + W[1, 3] * P[1, 3] + W[1, 4] * P[1, 4], 
+          W[2, 1] * P[1, 1] + W[2, 2] * P[1, 2] + W[2, 3] * P[1, 3] + W[2, 4] * P[1, 4], 
+          W[3, 1] * P[1, 1] + W[3, 2] * P[1, 2] + W[3, 3] * P[1, 3] + W[3, 4] * P[1, 4], 
+          W[4, 1] * P[1, 1] + W[4, 2] * P[1, 2] + W[4, 3] * P[1, 3] + W[4, 4] * P[1, 4], 
+          
+          W[1, 1] * P[2, 1] + W[1, 2] * P[2, 2] + W[1, 3] * P[2, 3] + W[1, 4] * P[2, 4], 
+          W[2, 1] * P[2, 1] + W[2, 2] * P[2, 2] + W[2, 3] * P[2, 3] + W[2, 4] * P[2, 4], 
+          W[3, 1] * P[2, 1] + W[3, 2] * P[2, 2] + W[3, 3] * P[2, 3] + W[3, 4] * P[2, 4], 
+          W[4, 1] * P[2, 1] + W[4, 2] * P[2, 2] + W[4, 3] * P[2, 3] + W[4, 4] * P[2, 4], 
+          
+          W[1, 1] * P[3, 1] + W[1, 2] * P[3, 2] + W[1, 3] * P[3, 3] + W[1, 4] * P[3, 4], 
+          W[2, 1] * P[3, 1] + W[2, 2] * P[3, 2] + W[2, 3] * P[3, 3] + W[2, 4] * P[3, 4], 
+          W[3, 1] * P[3, 1] + W[3, 2] * P[3, 2] + W[3, 3] * P[3, 3] + W[3, 4] * P[3, 4], 
+          W[4, 1] * P[3, 1] + W[4, 2] * P[3, 2] + W[4, 3] * P[3, 3] + W[4, 4] * P[3, 4], 
+          
+          W[1, 1] * P[4, 1] + W[1, 2] * P[4, 2] + W[1, 3] * P[4, 3] + W[1, 4] * P[4, 4], 
+          W[2, 1] * P[4, 1] + W[2, 2] * P[4, 2] + W[2, 3] * P[4, 3] + W[2, 4] * P[4, 4], 
+          W[3, 1] * P[4, 1] + W[3, 2] * P[4, 2] + W[3, 3] * P[4, 3] + W[3, 4] * P[4, 4], 
+          W[4, 1] * P[4, 1] + W[4, 2] * P[4, 2] + W[4, 3] * P[4, 3] + W[4, 4] * P[4, 4]) %>% 
+            matrix(nrow = 4, ncol = 4)
+            return()
+    }
+
+    # Create lists of potential possibilities
+    x <- list(c(1, 1, 1, 1), c(1, 0, 1, 0), c(0, 1, 0, 1), c(0, 0, 0, 0)) %>% 
+        lapply(\(x) matrix(x, ncol = 1))
+    y <- list(rep(-0.1, each = 2), rep(0, each = 2), rep(0.1, each = 2)) %>% 
+        lapply(\(x) matrix(x, ncol = 1))
+    P <- list(diag(4), 
+              2 * diag(4), 
+              2 * diag(4) + 0.5)
+    H <- list(matrix(c(1, 0, 0, 0, 0, 1, 0, 0), nrow = 2, ncol = 4, byrow = TRUE), 
+              matrix(c(1, 0, 0.1, 0, 0, 1, 0, 0.1), nrow = 2, ncol = 4, byrow = TRUE), 
+              matrix(rep(1, each = 8), nrow = 2, ncol = 4))
+    K <- list(matrix(c(1, 0.5, 0.5, 0.5, 0.5, 1, 0.5, 0.5), nrow = 4, ncol = 2, byrow = TRUE), 
+              matrix(c(1, 0, 0, 0, 0, 1, 0, 0), nrow = 4, ncol = 2, byrow = TRUE),
+              matrix(c(1, 1, 1, 1, 1, 1, 1, 1) * 0.5, nrow = 4, ncol = 2, byrow = TRUE))
+
+    # Do the manual and nonmanual translations and put the results in gigantic 
+    # lists
+    ref <- list()
+    tst <- list()
+    f <- 1
+    for(i in seq_along(x)) {
+        for(j in seq_along(y)) {
+            for(k in seq_along(P)) {
+                for(l in seq_along(H)) {
+                    for(m in seq_along(K)) {
+                        # Manual translations
+                        ref[[f]] <- list("x" = manual_x(x[[i]], y[[j]], K[[m]]), 
+                                         "P" = manual_P(P[[k]], K[[m]], H[[l]]))
+    
+                        # Through kf_predict
+                        tst[[f]] <- nameless::kf_update(x[[i]],
+                                                        P[[k]] %>% chol(), 
+                                                        y[[j]],
+                                                        H[[l]], 
+                                                        K[[m]])
+    
+                        # Update the index f
+                        f <- f + 1
+                    }
+                }
+            }
+        }
+    }
+
+    # Do the test
+    testthat::expect_equal(tst, ref)
+})
