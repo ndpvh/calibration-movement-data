@@ -141,7 +141,8 @@ kalman_filter_individual <- function(data,
 
         # Also save some of the intermediate results in a separate list, allowing
         # us to check them in case we want to
-        P[[i]] <- t(result[["P"]]) %*% result[["P"]]
+        # P[[i]] <- t(result[["P"]]) %*% result[["P"]]
+        P[[i]] <- result[["P"]]
         K[[i]] <- innovation[["K"]]
         y[[i]] <- innovation[["y"]]
 
@@ -220,11 +221,6 @@ kf_predict <- function(x0,
                        u = matrix(0, nrow = length(x0), ncol = 1), 
                        B = matrix(0, nrow = length(u), ncol = length(u))) {
 
-    # Transform the relevant matrices to a covariance matrix using their 
-    # Cholesky decomposition.
-    P0 <- t(P0) %*% P0 
-    # W <- t(W) %*% W
-    
     # Predict values of the mean and estimation covariance. Use the square root 
     # of the covariances to ensure that they will lead to positive definite 
     # matrices. For this, use and predict values of the Cholesky decomposition 
@@ -235,7 +231,7 @@ kf_predict <- function(x0,
     # Return the predicted value of x as well as the Cholesky decomposition of 
     # the covariance.
     return(list("x" = matrix(x, ncol = 1), 
-                "P" = chol(P)))
+                "P" = P)) 
 }
 
 #' Innovation step in the Kalman filter
@@ -289,7 +285,6 @@ kf_innovation <- function(z,
 
     # Transform the relevant matrices to a covariance matrix using their 
     # Cholesky decomposition.
-    P <- t(P) %*% P 
     R <- t(R) %*% R
 
     # Compute the innovation y and its covariance matrix decomposition
@@ -344,18 +339,12 @@ kf_update <- function(x,
                       H, 
                       K) {
 
-    # Transform the relevant matrices to a covariance matrix using their 
-    # Cholesky decomposition.
-    P <- t(P) %*% P 
-
     # Compute x and P         
     x <- x + K %*% y
-    Ptmp <- (diag(nrow(P)) - K %*% H) %*% P
-
-    tryCatch(chol(Ptmp), error = function(e) browser())
+    P <- (diag(nrow(P)) - K %*% H) %*% P
     
     return(list("x" = x,
-                "P" = chol(Ptmp)))
+                "P" = P))
 }
 
 
@@ -514,8 +503,7 @@ constant_velocity <- function(data,
                     c(NA, velocity$y)), 
               use = "pairwise.complete.obs") %>% 
         diag() %>% 
-        diag() %>% 
-        chol()
+        diag()
 
     # Put everything in a list and return. This list looks different for the 
     # internal functions than for the kalman_filter function of the 
