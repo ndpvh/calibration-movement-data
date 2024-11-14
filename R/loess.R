@@ -11,17 +11,28 @@
 #' 
 #' @export
 local_regression <- function(data, 
+                             .by = "id",
+                             span_obs = NULL,
+                             span = 0.75,
                              ...) {
-    
-    # Perform a loess of a given degree
-    result <- loess(formula = y ~ x, 
-                    data = data, 
-                    ...)
 
-    # Once done, we can replace the results of the data with these results
-    result <- data %>%
-        dplyr::mutate(x = result$x, 
-                      y = result$y)
+    # If `span_obs` is defined, we want to change the `span` argument to account
+    # for the number of observations within each window
+    if(!is.null(span_obs)) {
+        span <- round(span_obs / nrow(data), digits = 4)
+    }
 
-    return(result)
+    # Do a regression for each value of .by
+    data %>% 
+        dplyr::group_by_at(.by) %>% 
+        dplyr::mutate(x = loess(formula = x ~ time, 
+                                span = span,
+                                ...) %>% 
+                          predict(), 
+                      y = loess(formula = y ~ time, 
+                                span = span,
+                                ...) %>% 
+                          predict()) %>% 
+        dplyr::ungroup() %>% 
+        return()
 }
