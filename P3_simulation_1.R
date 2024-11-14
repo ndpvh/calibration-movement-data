@@ -98,16 +98,23 @@ names(pipelines) <- sapply(seq_len(nrow(combos)),
                            \(i) paste(combos$spans[i], combos$fx[i], sep = "_"))
 
 # Define the Kalman filters and put them in the pipelines
-pipelines[["kalm_rev_cv"]] <- list(\(x) nameless::kalman_filter(x, reverse = TRUE, .by = "id", assumed_variance = 0.02^2))
-pipelines[["kalm_norev_cv"]] <- list(\(x) nameless::kalman_filter(x, reverse = FALSE, .by = "id", assumed_variance = 0.02^2))
+pipelines[["kalm_rev_cv"]] <- list(\(x) nameless::kalman_filter(x, reverse = TRUE, .by = "id", assumed_variance = 0.031^2))
+pipelines[["kalm_norev_cv"]] <- list(\(x) nameless::kalman_filter(x, reverse = FALSE, .by = "id", assumed_variance = 0.031^2))
 
 # Also add a loess of varying degrees
-pipelines[["loess_1_75"]] <- list(\(x) nameless::local_regression(x, degree = 1, span = 0.75))
-pipelines[["loess_2_75"]] <- list(\(x) nameless::local_regression(x, degree = 2, span = 0.75))
-pipelines[["loess_1_50"]] <- list(\(x) nameless::local_regression(x, degree = 1, span = 0.50))
-pipelines[["loess_2_50"]] <- list(\(x) nameless::local_regression(x, degree = 2, span = 0.50))
-pipelines[["loess_1_25"]] <- list(\(x) nameless::local_regression(x, degree = 1, span = 0.25))
-pipelines[["loess_2_25"]] <- list(\(x) nameless::local_regression(x, degree = 2, span = 0.25))
+pipelines[["loess_1_75"]] <- list(\(x) nameless::local_regression(x, degree = 1, span = 0.75, surface = "direct"))
+pipelines[["loess_2_75"]] <- list(\(x) nameless::local_regression(x, degree = 2, span = 0.75, surface = "direct"))
+pipelines[["loess_1_50"]] <- list(\(x) nameless::local_regression(x, degree = 1, span = 0.50, surface = "direct"))
+pipelines[["loess_2_50"]] <- list(\(x) nameless::local_regression(x, degree = 2, span = 0.50, surface = "direct"))
+pipelines[["loess_1_25"]] <- list(\(x) nameless::local_regression(x, degree = 1, span = 0.25, surface = "direct"))
+pipelines[["loess_2_25"]] <- list(\(x) nameless::local_regression(x, degree = 2, span = 0.25, surface = "direct"))
+
+pipelines[["loess_1_obs5"]] <- list(\(x) nameless::local_regression(x, degree = 1, span_obs = 5, surface = "direct"))
+pipelines[["loess_2_obs5"]] <- list(\(x) nameless::local_regression(x, degree = 2, span_obs = 5, surface = "direct"))
+pipelines[["loess_1_obs10"]] <- list(\(x) nameless::local_regression(x, degree = 1, span_obs = 10, surface = "direct"))
+pipelines[["loess_2_obs10"]] <- list(\(x) nameless::local_regression(x, degree = 2, span_obs = 10, surface = "direct"))
+pipelines[["loess_1_obs15"]] <- list(\(x) nameless::local_regression(x, degree = 1, span_obs = 15, surface = "direct"))
+pipelines[["loess_2_obs15"]] <- list(\(x) nameless::local_regression(x, degree = 2, span_obs = 15, surface = "direct"))
 
 # Define the link between pipelines and data
 data_files <- data.frame(filename = rep(names(data_list), each = length(pipelines)), 
@@ -134,19 +141,19 @@ preprocess <- function(x) {
         local_data$nsim <- 1
     }
 
-    # Execute the pipeline 
-    result <- local_data %>% 
-        dplyr::group_by(nsim) %>%
-        tidyr::nest() %>% 
-        dplyr::mutate(data = data %>% 
-                          as.data.frame() %>% 
-                          nameless::execute_pipeline(pipelines[[fx]], 
-                                                     report = FALSE) %>% 
-                          list()) %>% 
-        tidyr::unnest(data) %>% 
-        dplyr::ungroup()
+    # Execute the pipeline. Changed from doing this in a nested data structure 
+    # to ease debugging when necessary. Also is less susceptible to errors 
+    # triggered in glue (which I couldn't resolve).
+    result <- list() ; f <- 1
+    for(i in unique(local_data$nsim)) {
+        result[[f]] <- local_data %>% 
+            dplyr::filter(nsim == i) %>% 
+            execute_pipeline(pipelines[[fx]], report = FALSE)
 
-    return(result)
+        f <- f + 1
+    }
+
+    return(do.call("rbind", result))
 }
 
 # Create a function that will transform a dataframe to plot_data containing 
@@ -268,12 +275,16 @@ trajectory <- function(x) {
                    other[[2]]$x, 
                    other[[1]]$xend, 
                    other[[2]]$xend) %>% 
-            range()
+            range() 
         ylims <- c(other[[1]]$y, 
                    other[[2]]$y, 
                    other[[1]]$yend, 
                    other[[2]]$yend) %>% 
             range()
+
+        # Make the limits somewhat broader
+        xlims <- xlims + c(-1, 1) * diff(xlims) * 0.25
+        ylims <- ylims + c(-1, 1) * diff(ylims) * 0.25
 
         # Create a name plot for the kind of movement
         # Add a name-plot
@@ -330,7 +341,7 @@ for(i in seq_len(nrow(data_files))) {
     cat(paste0("\rCreating plot ", i, " of ", nrow(data_files)))
 
     # Can comment out if you want to look at a specific analysis
-    # if(!grepl("kalm_rev_cv", data_files$condition[i], fixed = TRUE)) {
+    # if(!grepl("loess", data_files$condition[i], fixed = TRUE)) {
     #     next
     # }
 
@@ -351,28 +362,7 @@ for(i in seq_len(nrow(data_files))) {
                     unit = "px")
 
     if(i == nrow(data_files)) {
-        print(" ")
+        cat("\n")
     }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
