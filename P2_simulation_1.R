@@ -66,130 +66,123 @@ saveRDS(data_list, file.path("results", "simulation_1", "data_list.Rds"))
 # Pipelines
 #-------------------------------------------------------------------------------
 
-# Create several different preprocessing pipelines to be tested. Created 
-# with the following in mind: 
-#   - Differences in moving window approach
-#       - Span: 3, 5, or 11 data points
-#       - Statistic: average, weighted average, local linear or quadratic regression
-#       - Variable for weighting: time or index
-#       - Distribution for weighting: standard normal or N(0, 0.25^2) (about span of 1.5m)
-#   - Kalman filter
-#       - Whether to feedback and feedforward the data 
+# Define all moving windows. In these moving windows, we always use `span = 1`, 
+# defining a window of 3 observations over which to execute the functions. This 
+# number is based on a small tuning study in which performance for `span = 1` 
+# outperformed those of `span = 2` and `span = 5` when looking at RMSE.
 #
-# We cross all of these approaches
-
-# Define all moving windows. To allow for the stable creation of different 
-# moving windows in for-loops, we will need to create a wrapper-function that 
-# takes in the variable arguments and outputs the function to be used in the 
-# pipeline. 
-fx <- list("av" = \(x) nameless::average(x), 
-           "idx" = \(x) nameless::weighted_average(x, .by = "index"),
-           "time" = \(x) nameless::weighted_average(x, .by = "relative_time"),
-           "lin" = \(x) nameless::linear(x),
-           "quad" = \(x) nameless::parabola(x))
-
-# Define the Kalman filters
-kalm_rev <- \(x) nameless::kalman_filter(x, reverse = TRUE, .by = "id")
-kalm_norev <- \(x) nameless::kalman_filter(x, reverse = FALSE, .by = "id")
-
-# Bind together all conditions exhaustively. With this binding, we keep account 
-# of the following:
-#   - Counterbalance order of the pipeline
-#   - If multiple moving windows combined, no similar ones used (i.e., average 
-#     not paired with weighted average, linear not paired with parabola)
-#   - If multiple moving windows combined, span of these moving windows is kept
-#     the same
-#   - If Kalman filter used, either put at the end or at the beginning of the 
-#     pipeline
+# As to the statistics used in this moving window, we use the simple average, 
+# a weighted average over the index of the observation within the window 
+# weighted by the standard normal, and a weighted average over the relative time 
+# compared to the midpoint in the window weighted by a normal with standard 
+# deviation 1/10. This standard deviation is chosen to be similar to the standard
+# normal for index, where the time between observations is typically 0.1.
 #
-# First, create a list for all moving windows in separation
-spans <- c(1, 2, 5)
-fx_names <- c("av", "idx", "time", "lin", "quad")
-combos <- data.frame(spans = rep(spans, each = length(fx_names)), 
-                     fx_names = rep(fx_names, times = length(spans)))
+# To allow for the stable creation of different moving windows in for-loops, we 
+# will need to create a wrapper-function that takes in the variable arguments 
+# and outputs the function to be used in the pipeline. 
+mw <- list(\(x) nameless::average(x), 
+           \(x) nameless::weighted_average(x, 
+                                           .by = "index"),
+           \(x) nameless::weighted_average(x, 
+                                           .by = "relative_time", 
+                                           weights = \(x) dnorm(x, mean = 0, sd = 1/10))) %>% 
+    lapply(function(x) {
+               factory <- \(y) nameless::moving_window(y, 
+                                                       span = 1, 
+                                                       fx = x, 
+                                                       .by = "id")
+               return(factory)
+           }) %>% 
+    `names<-` (c("av", "idx", "time"))
 
-mw_alone <- lapply(seq_len(nrow(combos)), 
-                   function(i) {
-                       # Both steps in this function prevent R from being lazy 
-                       # and only compiling the function when we need it. 
-                       # Instead, we will ask R to compile the function now, 
-                       # preventing problems when the index `i` takes on values 
-                       # that fall outside of the range of `combos`
+# Define the Kalman filters. For these filters, we provide them with the 
+# assumed error variance corresponding to a SD of 3.1cm, which we observed in 
+# the calibration experiments. We differentiate between two filters; one that 
+# goes in one direction of time (`reverse = FALSE`) and one in which we first 
+# train the filter on the reversed data and only then filter the actual data 
+# (`reverse = TRUE`).
+kalm <- list("kalm" = \(x) nameless::kalman_filter(x, 
+                                                   assumed_variance = 0.031^2,
+                                                   reverse = FALSE, 
+                                                   .by = "id"), 
+             "kalm-rev" = \(x) nameless::kalman_filter(x, 
+                                                       assumed_variance = 0.031^2, 
+                                                       reverse = TRUE, 
+                                                       .by = "id"))
 
-                       # Initialize the function to be performed on the window
-                       gx <- fx[[combos$fx[i]]]
+# Define the LOESS and LOWESS. Here, we differentiate between the degree of the 
+# fitted polynomial (linear or parabolic, `degree = 1` or `degree = 2` resp.)
+# and the number of observations accounted for within the fit-window (either 10
+# or 15). These settings were based on an initial tuning round.
+reg <- list("loess-1-10" = \(x) nameless::local_regression(x, 
+                                                           degree = 1, 
+                                                           span_obs = 10, 
+                                                           surface = "direct"), 
+            "loess-1-15" = \(x) nameless::local_regression(x, 
+                                                           degree = 1, 
+                                                           span_obs = 15, 
+                                                           surface = "direct"),
+            "loess-2-10" = \(x) nameless::local_regression(x, 
+                                                           degree = 2, 
+                                                           span_obs = 10, 
+                                                           surface = "direct"),
+            "loess-2-15" = \(x) nameless::local_regression(x, 
+                                                           degree = 2, 
+                                                           span_obs = 15, 
+                                                           surface = "direct"))
 
-                       # Initialize the moving window function itself
-                       factory <- \(x) nameless::moving_window(x, span = combos$spans[i], fx = gx, .by = "id")
-                       return(list(factory))
-                   })
-names(mw_alone) <- sapply(seq_len(nrow(combos)), 
-                          \(i) paste(combos$spans[i], combos$fx[i], sep = "_"))
-
-# Create a list with the moving windows combined with each other. Same logic
-# applies here with regard to lazy R
-spans <- c(1, 2, 5)
-fx_1 <- c("av", "idx", "time")
-fx_2 <- c("lin", "quad")
-combos <- data.frame(spans = rep(spans, each = length(fx_1) * length(fx_2)), 
-                     fx_1 = rep(rep(fx_1, each = length(fx_2)), times = length(spans)), 
-                     fx_2 = rep(fx_2, times = length(spans) * length(fx_1)))
-
-mw_combined <- append(lapply(seq_len(nrow(combos)), 
-                             function(i) {
-                                 gx_1 <- fx[[combos$fx_1[i]]]
-                                 gx_2 <- fx[[combos$fx_2[i]]]
-
-                                 factory_1 <- \(x) nameless::moving_window(x, span = combos$spans[i], fx = gx_1, .by = "id")
-                                 factory_2 <- \(x) nameless::moving_window(x, span = combos$spans[i], fx = gx_2, .by = "id")
-
-                                 return(list(factory_1, factory_2))
-                             }), 
-                      lapply(seq_len(nrow(combos)), 
-                             function(i) {
-                                 gx_1 <- fx[[combos$fx_1[i]]]
-                                 gx_2 <- fx[[combos$fx_2[i]]]
-
-                                 factory_1 <- \(x) nameless::moving_window(x, span = combos$spans[i], fx = gx_1, .by = "id")
-                                 factory_2 <- \(x) nameless::moving_window(x, span = combos$spans[i], fx = gx_2, .by = "id")
-
-                                 return(list(factory_2, factory_1))
-                             }))
-names(mw_combined) <- c(sapply(seq_len(nrow(combos)), 
-                               \(i) paste(combos$spans[i], combos$fx_1[i], combos$fx_2[i], sep = "_")), 
-                        sapply(seq_len(nrow(combos)), 
-                               \(i) paste(combos$spans[i], combos$fx_2[i], combos$fx_1[i], sep = "_")))
-
-# Create a list with the Kalman filters alone
-kalman_alone <- list("kr" = list(kalm_rev), 
-                     "kn" = list(kalm_norev))
-
-# Add Kalman filter combinations to the moving windows
-mw <- append(mw_alone, mw_combined)
-mw_names <- names(mw)
-
-kalman_combined <- list()
-for(i in seq_along(mw)) {
-    # Reversed Kalman filter first and last
-    key <- paste0("kr_", mw_names[i])
-    kalman_combined[[key]] <- append(list(kalm_rev), mw[[i]])
-
-    key <- paste0(mw_names[i], "_kr")
-    kalman_combined[[key]] <- append(mw[[i]], list(kalm_rev))
-
-    # Original Kalman filter first and last
-    key <- paste0("kn_", mw_names[i])
-    kalman_combined[[key]] <- append(list(kalm_norev), mw[[i]])
-    
-    key <- paste0(mw_names[i], "_kn")
-    kalman_combined[[key]] <- append(mw[[i]], list(kalm_norev))
+# Create functions that will create all possible pairs and triplets based on the 
+# input strings. This will make it easier for us make the combination of the
+# different preprocessing functions.
+make_pairs <- function(x, y) {
+    return(rbind(expand.grid(x, y), 
+                 expand.grid(y, x)))
 }
 
+make_triplets <- function(x, y, z) {
+    return(rbind(expand.grid(x, y, z), 
+                 expand.grid(x, z, y), 
+                 expand.grid(y, x, z), 
+                 expand.grid(y, z, x), 
+                 expand.grid(z, x, y), 
+                 expand.grid(z, y, x)))
+}
+
+create_labels <- function(x) {
+    columns <- colnames(x)
+
+    do.call("paste", c(x[columns], sep = "_")) %>% 
+        return()
+}
+
+# Create a list that contains all of the different combinations between the 
+# preprocessing functions. In the end, we get a big list of lists which can be 
+# handed to the `execute_pipeline` function.
+all_functions <- append(append(mw, kalm), reg)
+
+# Names of the relevant functions
+singles <- names(all_functions)
+pairs <- rbind(make_pairs(names(mw), names(kalm)), 
+               make_pairs(names(mw), names(reg)), 
+               make_pairs(names(reg), names(kalm)))
+triplets <- make_triplets(names(mw), names(kalm), names(reg))
+
+# Actually putting them in a list
+singles <- lapply(singles, 
+                  \(x) list(all_functions[[x]])) %>% 
+    `names<-` (singles)
+pairs <- lapply(seq_len(nrow(pairs)), 
+                \(i) lapply(pairs[i,], 
+                            \(x) all_functions[[x]])) %>% 
+    `names<-` (create_labels(pairs))
+triplets <- lapply(seq_len(nrow(triplets)), 
+                   \(i) lapply(triplets[i,], 
+                               \(x) all_functions[[x]])) %>% 
+    `names<-` (create_labels(triplets))
+
 # Combine all lists into one overarching combinations list
-conditions <- append(mw_alone,
-                     append(kalman_alone, 
-                            append(mw_combined, 
-                                   kalman_combined)))
+conditions <- append(append(singles, pairs), triplets)
 
 # Combine the information of the conditions with the information on the data
 # itself, matching conditions to data
@@ -253,9 +246,12 @@ compute_summary_statistics <- function(data, kind) {
 
                          # Statistics about the size of the measurement error
                          # (compared to the actual positions)
-                         sd_diff_x = sd(difference_x, na.rm = TRUE), 
-                         sd_diff_y = sd(difference_y, na.rm = TRUE), 
-                         sd_dist = sd(distance, na.rm = TRUE),
+                         rmse_diff_x = sd(difference_x, na.rm = TRUE), 
+                         rmse_diff_y = sd(difference_y, na.rm = TRUE), 
+                         rmse_dist = sd(distance, na.rm = TRUE),
+                         mae_diff_x = mean(abs(difference_x), na.rm = TRUE), 
+                         mae_diff_y = mean(abs(difference_y), na.rm = TRUE), 
+                         mae_dist = mean(abs(distance), na.rm = TRUE), 
                          
                          # Autocorrelation in the residuals
                          auto_x = cor(difference_x[2:length(difference_x)], 
@@ -282,7 +278,8 @@ compute_summary_statistics <- function(data, kind) {
 pipeline_efficacy <- function(x){
     
     # Retrieve the data and the pipeline for the condition
-    local_data <- data_list[[x$filename]]
+    local_data <- data_list[[x$filename]] %>% 
+        dplyr::filter(time < 5)
     fx <- names(conditions)
 
     # Check whether the data have a reference to the simulation number. If not, 
@@ -328,14 +325,16 @@ pipeline_efficacy <- function(x){
                                x$filename)
             
                            # Execute the pipeline 
-                           result <- local_data %>% 
-                               dplyr::mutate(data = data %>% 
-                                                 as.data.frame() %>% 
-                                                 nameless::execute_pipeline(conditions[[fx[i]]], 
-                                                                            report = FALSE) %>% 
-                                                 list()) %>% 
-                               tidyr::unnest(data) %>% 
-                               dplyr::ungroup()
+                           result <- lapply(seq_len(nrow(local_data)), 
+                                            function(j) {
+                                                local_data$data[[j]] %>% 
+                                                    as.data.frame() %>% 
+                                                    nameless::execute_pipeline(conditions[[fx[i]]], 
+                                                                               report = FALSE) %>% 
+                                                    dplyr::mutate(nsim = j) %>% 
+                                                    return()
+                                            })
+                           result <- tryCatch(do.call("rbind", result), error = function(e) browser())
             
                            # Compute the summary statistics from the preprocessed 
                            # data and save these results
@@ -345,10 +344,10 @@ pipeline_efficacy <- function(x){
                                              condition = fx[i]) 
 
                            data.table::fwrite(result, 
-                                                  file.path("results", 
-                                                            "simulation_1", 
-                                                            "tmp", 
-                                                            paste0("tmp", i, ".csv")))
+                                              file.path("results", 
+                                                        "simulation_1", 
+                                                        "tmp", 
+                                                        paste0("tmp", i, ".csv")))
                            
                            rm(list = c("result"))
                            gc()
@@ -368,8 +367,9 @@ pipeline_efficacy <- function(x){
                                                                    paste0("tmp", i, ".csv")))
     }
     
-    summary_statistics <- do.call("rbind", summary_statistics) %>% 
-        dplyr::relocate(filename, condition, preprocessed, nsim)
+    summary_statistics <- tryCatch(do.call("rbind", summary_statistics) %>% 
+        dplyr::relocate(filename, condition, preprocessed, nsim),
+        error = function(e) browser())
 
     # Save these results and delete the dataframes created here
     data.table::fwrite(summary_statistics, 
