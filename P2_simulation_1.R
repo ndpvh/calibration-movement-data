@@ -278,8 +278,7 @@ compute_summary_statistics <- function(data, kind) {
 pipeline_efficacy <- function(x){
     
     # Retrieve the data and the pipeline for the condition
-    local_data <- data_list[[x$filename]] %>% 
-        dplyr::filter(time < 5)
+    local_data <- data_list[[x$filename]]
     fx <- names(conditions)
 
     # Check whether the data have a reference to the simulation number. If not, 
@@ -403,96 +402,96 @@ for(i in seq_len(nrow(data_files))) {
 ################################################################################
 # VISUALIZATION
 
-# Load the needed files
-filenames <- list.files(path = file.path(".", "results", "simulation_1"), 
-                        pattern = "\\.csv")
-filenames <- filenames[filenames != "data_files.csv"]
+# # Load the needed files
+# filenames <- list.files(path = file.path(".", "results", "simulation_1"), 
+#                         pattern = "\\.csv")
+# filenames <- filenames[filenames != "data_files.csv"]
 
-results <- lapply(filenames, 
-                  \(x) data.table::fread(file.path(".", "results", "simulation_1", x), 
-                                         data.table = FALSE))
+# results <- lapply(filenames, 
+#                   \(x) data.table::fread(file.path(".", "results", "simulation_1", x), 
+#                                          data.table = FALSE))
 
-# Create a function that takes in a dataframe and creates the plots of interest
-make_plot <- function(x, 
-                      statistics) {
+# # Create a function that takes in a dataframe and creates the plots of interest
+# make_plot <- function(x, 
+#                       statistics) {
 
-    # Split data before preprocessing and after preprocessing
-    before <- dplyr::filter(x, preprocessed == "before")
-    after <- dplyr::filter(x, preprocessed == "after")
+#     # Split data before preprocessing and after preprocessing
+#     before <- dplyr::filter(x, preprocessed == "before")
+#     after <- dplyr::filter(x, preprocessed == "after")
 
-    # Get the data of before
-    before <- before %>%
-        dplyr::select(contains(statistics)) %>%
-        setNames("X") %>%
-        dplyr::mutate(M = 1)
+#     # Get the data of before
+#     before <- before %>%
+#         dplyr::select(contains(statistics)) %>%
+#         setNames("X") %>%
+#         dplyr::mutate(M = 1)
 
-    # Get all conditions out of there
-    conditions <- unique(after$condition)
+#     # Get all conditions out of there
+#     conditions <- unique(after$condition)
 
-    # Fix the limits on the x-axis (within bounds, of course)
-    all_x <- x[, statistics]
+#     # Fix the limits on the x-axis (within bounds, of course)
+#     all_x <- x[, statistics]
 
-    if(grepl("sd", statistics, fixed = TRUE)) {
-        idx <- all_x < quantile(all_x, probs = 0.95)
-    } else {
-        idx <- all_x < quantile(all_x, probs = 0.975) & all_x > quantile(all_x, probs = 0.025)
-    }
+#     if(grepl("sd", statistics, fixed = TRUE)) {
+#         idx <- all_x < quantile(all_x, probs = 0.95)
+#     } else {
+#         idx <- all_x < quantile(all_x, probs = 0.975) & all_x > quantile(all_x, probs = 0.025)
+#     }
 
-    xlim <- range(all_x[idx])
+#     xlim <- range(all_x[idx])
 
-    # Loop over all conditions and create the plot of interest
-    plt <- list()
-    for(i in conditions) {
-        # Get plot data for the condition and the statistic of interest. Bind 
-        # together for before and after
-        plot_data <- after %>%
-            dplyr::filter(condition == i) %>%
-            dplyr::select(contains(statistics)) %>%
-            setNames("X") %>%
-            dplyr::mutate(M = 2) %>%
-            rbind(before) %>%
-            dplyr::mutate(M = factor(M))
+#     # Loop over all conditions and create the plot of interest
+#     plt <- list()
+#     for(i in conditions) {
+#         # Get plot data for the condition and the statistic of interest. Bind 
+#         # together for before and after
+#         plot_data <- after %>%
+#             dplyr::filter(condition == i) %>%
+#             dplyr::select(contains(statistics)) %>%
+#             setNames("X") %>%
+#             dplyr::mutate(M = 2) %>%
+#             rbind(before) %>%
+#             dplyr::mutate(M = factor(M))
 
-        # Create a histogram as the plot of choice. Include the condition name 
-        # in the plot and make the legend tell us something
-        plt[[i]] <- ggplot2::ggplot(data = plot_data, 
-                                    ggplot2::aes(x = X, fill = M)) +
-            ggplot2::geom_histogram(alpha = 0.5, 
-                                    bins = 15, 
-                                    color = "black", 
-                                    position = "identity") +
-            ggplot2::labs(title = i, 
-                          legend = "Preprocessed") +
-            ggplot2::lims(x = xlim) +
-            ggplot2::scale_fill_manual(labels = c("1" = "Before", 
-                                                  "2" = "After"), 
-                                       values = c("1" = "salmon", 
-                                                  "2" = "cornflowerblue")) +
-            ggplot2::theme_minimal() 
-    }
+#         # Create a histogram as the plot of choice. Include the condition name 
+#         # in the plot and make the legend tell us something
+#         plt[[i]] <- ggplot2::ggplot(data = plot_data, 
+#                                     ggplot2::aes(x = X, fill = M)) +
+#             ggplot2::geom_histogram(alpha = 0.5, 
+#                                     bins = 15, 
+#                                     color = "black", 
+#                                     position = "identity") +
+#             ggplot2::labs(title = i, 
+#                           legend = "Preprocessed") +
+#             ggplot2::lims(x = xlim) +
+#             ggplot2::scale_fill_manual(labels = c("1" = "Before", 
+#                                                   "2" = "After"), 
+#                                        values = c("1" = "salmon", 
+#                                                   "2" = "cornflowerblue")) +
+#             ggplot2::theme_minimal() 
+#     }
 
-    # Bind together and save under figures
-    plt <- ggpubr::ggarrange(plotlist = plt, 
-                             nrow = 17, 
-                             ncol = 17,
-                             common.legend = TRUE, 
-                             legend = "right")
+#     # Bind together and save under figures
+#     plt <- ggpubr::ggarrange(plotlist = plt, 
+#                              nrow = 17, 
+#                              ncol = 17,
+#                              common.legend = TRUE, 
+#                              legend = "right")
 
-    ggplot2::ggsave(plt, 
-                    filename = file.path("figures", 
-                                         "simulation_1", 
-                                         "summary_statistics",
-                                         paste0(x$filename[1], "__", statistics, ".png")), 
-                    width = 17 * 600,
-                    height = 17 * 650, 
-                    unit = "px")
+#     ggplot2::ggsave(plt, 
+#                     filename = file.path("figures", 
+#                                          "simulation_1", 
+#                                          "summary_statistics",
+#                                          paste0(x$filename[1], "__", statistics, ".png")), 
+#                     width = 17 * 600,
+#                     height = 17 * 650, 
+#                     unit = "px")
 
-    return(NULL)
-}
+#     return(NULL)
+# }
 
-# Create all figures
-for(i in seq_along(results)) {
-    for(j in c("mean_diff_x", "mean_diff_y", "mean_dist", "sd_diff_x", "sd_diff_y", "sd_dist")) {
-        make_plot(results[[i]], j)
-    }
-}
+# # Create all figures
+# for(i in seq_along(results)) {
+#     for(j in c("mean_diff_x", "mean_diff_y", "mean_dist", "sd_diff_x", "sd_diff_y", "sd_dist")) {
+#         make_plot(results[[i]], j)
+#     }
+# }
