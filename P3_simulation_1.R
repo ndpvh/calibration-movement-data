@@ -148,7 +148,8 @@ preprocess <- function(x) {
     for(i in unique(local_data$nsim)) {
         result[[f]] <- local_data %>% 
             dplyr::filter(nsim == i) %>% 
-            execute_pipeline(pipelines[[fx]], report = FALSE)
+            execute_pipeline(pipelines[[fx]], report = FALSE) %>% 
+            dplyr::mutate(nsim = i)
 
         f <- f + 1
     }
