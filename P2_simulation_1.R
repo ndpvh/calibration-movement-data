@@ -136,17 +136,17 @@ reg <- list("loess-1-10" = \(x) nameless::local_regression(x,
 # input strings. This will make it easier for us make the combination of the
 # different preprocessing functions.
 make_pairs <- function(x, y) {
-    return(rbind(expand.grid(x, y), 
-                 expand.grid(y, x)))
+    return(rbind(expand.grid(x, y, stringsAsFactors = FALSE), 
+                 expand.grid(y, x, stringsAsFactors = FALSE)))
 }
 
 make_triplets <- function(x, y, z) {
-    return(rbind(expand.grid(x, y, z), 
-                 expand.grid(x, z, y), 
-                 expand.grid(y, x, z), 
-                 expand.grid(y, z, x), 
-                 expand.grid(z, x, y), 
-                 expand.grid(z, y, x)))
+    return(rbind(expand.grid(x, y, z, stringsAsFactors = FALSE), 
+                 expand.grid(x, z, y, stringsAsFactors = FALSE), 
+                 expand.grid(y, x, z, stringsAsFactors = FALSE), 
+                 expand.grid(y, z, x, stringsAsFactors = FALSE), 
+                 expand.grid(z, x, y, stringsAsFactors = FALSE), 
+                 expand.grid(z, y, x, stringsAsFactors = FALSE)))
 }
 
 create_labels <- function(x) {
@@ -173,11 +173,11 @@ singles <- lapply(singles,
                   \(x) list(all_functions[[x]])) %>% 
     `names<-` (singles)
 pairs <- lapply(seq_len(nrow(pairs)), 
-                \(i) lapply(pairs[i,], 
+                \(i) lapply(as.character(pairs[i,]), 
                             \(x) all_functions[[x]])) %>% 
     `names<-` (create_labels(pairs))
 triplets <- lapply(seq_len(nrow(triplets)), 
-                   \(i) lapply(triplets[i,], 
+                   \(i) lapply(as.character(triplets[i,]), 
                                \(x) all_functions[[x]])) %>% 
     `names<-` (create_labels(triplets))
 
