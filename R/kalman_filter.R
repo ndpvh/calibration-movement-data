@@ -151,17 +151,9 @@ kalman_filter_individual <- function(data,
         P0 <- result[["P"]]
     }
 
-    # If you reversed the data, delete the reversed data and only keep the new 
-    # (smoothed) values for the original ones
-    if(reverse) {
-        smoothed <- smoothed %>% 
-            dplyr::filter(original) %>% 
-            dplyr::select(-original)
-    }
-
     # Replace the original dataset with the smoothed ones
     data <- data %>% 
-        dplyr::select(-x, -y) %>% 
+        dplyr::select(-x, -y, -original) %>% 
         dplyr::full_join(smoothed, by = "time") %>% 
         dplyr::select(-Delta_t, -index) %>% 
         dplyr::relocate(time, x, y)
