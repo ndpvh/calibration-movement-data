@@ -152,10 +152,11 @@ kalman_filter_individual <- function(data,
     }
 
     # Replace the original dataset with the smoothed ones
+    smoothed <- dplyr::filter(smoothed, original)
     data <- data %>% 
-        dplyr::select(-x, -y, -original) %>% 
+        dplyr::select(-x, -y) %>% 
         dplyr::full_join(smoothed, by = "time") %>% 
-        dplyr::select(-Delta_t, -index) %>% 
+        dplyr::select(-Delta_t, -index, -original) %>% 
         dplyr::relocate(time, x, y)
         
     return(data)
