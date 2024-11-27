@@ -115,22 +115,9 @@ kalm <- list("kalm" = \(x) nameless::kalman_filter(x,
 # fitted polynomial (linear or parabolic, `degree = 1` or `degree = 2` resp.)
 # and the number of observations accounted for within the fit-window (either 10
 # or 15). These settings were based on an initial tuning round.
-reg <- list("loess-1-10" = \(x) nameless::local_regression(x, 
-                                                           degree = 1, 
-                                                           span_obs = 10, 
-                                                           surface = "direct"), 
-            "loess-1-15" = \(x) nameless::local_regression(x, 
-                                                           degree = 1, 
-                                                           span_obs = 15, 
-                                                           surface = "direct"),
-            "loess-2-10" = \(x) nameless::local_regression(x, 
-                                                           degree = 2, 
-                                                           span_obs = 10, 
-                                                           surface = "direct"),
-            "loess-2-15" = \(x) nameless::local_regression(x, 
-                                                           degree = 2, 
-                                                           span_obs = 15, 
-                                                           surface = "direct"))
+reg <- list("loess-1" = \(x) nameless::local_regression(x, .by = "id", degree = 1), 
+            "loess-2" = \(x) nameless::local_regression(x, .by = "id", degree = 2),
+            "loess-3" = \(x) nameless::local_regression(x, .by = "id", degree = 3))
 
 # Create functions that will create all possible pairs and triplets based on the 
 # input strings. This will make it easier for us make the combination of the
