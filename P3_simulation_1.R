@@ -72,11 +72,11 @@ names(data_list) <- kind
 # moving windows in for-loops, we will need to create a wrapper-function that 
 # takes in the variable arguments and outputs the function to be used in the 
 # pipeline. 
-fx <- list("av" = \(x) nameless::average(x), 
-           "idx" = \(x) nameless::weighted_average(x, .by = "index"),
-           "time" = \(x) nameless::weighted_average(x, .by = "relative_time", weights = \(x) dnorm(x, mean = 0, sd = 1/10)),
-           "lin" = \(x) nameless::linear(x),
-           "quad" = \(x) nameless::parabola(x))
+fx <- list("av" = \(x) nameless::average(x, cols = c("x_original", "y_original")), 
+           "idx" = \(x) nameless::weighted_average(x, .by = "index", cols = c("x_original", "y_original")),
+           "time" = \(x) nameless::weighted_average(x, .by = "relative_time", weights = \(x) dnorm(x, mean = 0, sd = 1/10), cols = c("x_original", "y_original")),
+           "lin" = \(x) nameless::linear(x, cols = c("x_original", "y_original")),
+           "quad" = \(x) nameless::parabola(x, cols = c("x_original", "y_original")))
 
 # Make the combination of the spans and function names for the moving windows.
 spans <- c(1, 2, 5)
@@ -206,7 +206,10 @@ trajectory <- function(x) {
     # original data. Differentially handled by Kalman filters than moving 
     # windows, as the latter needs explicit inclusion of columns while the 
     # former does this by default.
-    local_data <- preprocess(x) %>% 
+    local_data <- preprocess(x) 
+
+    browser()
+    local_data <- local_data %>% 
         dplyr::rename(filtered_x = x, 
                       filtered_y = y) %>% 
         dplyr::mutate(x_original = NA, 

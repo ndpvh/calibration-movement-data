@@ -81,12 +81,15 @@ saveRDS(data_list, file.path("results", "simulation_1", "data_list.Rds"))
 # To allow for the stable creation of different moving windows in for-loops, we 
 # will need to create a wrapper-function that takes in the variable arguments 
 # and outputs the function to be used in the pipeline. 
-mw <- list(\(x) nameless::average(x), 
+mw <- list(\(x) nameless::average(x,
+                                  cols = c("x_original", "y_original")), 
            \(x) nameless::weighted_average(x, 
-                                           .by = "index"),
+                                           .by = "index",
+                                           cols = c("x_original", "y_original")),
            \(x) nameless::weighted_average(x, 
                                            .by = "relative_time", 
-                                           weights = \(x) dnorm(x, mean = 0, sd = 1/10))) %>% 
+                                           weights = \(x) dnorm(x, mean = 0, sd = 1/10),
+                                           cols = c("x_original", "y_original"))) %>% 
     lapply(function(x) {
                factory <- \(y) nameless::moving_window(y, 
                                                        span = 1, 
@@ -262,10 +265,11 @@ compute_summary_statistics <- function(data, kind) {
 #
 # The single argument `x` contains the information on the combination of data set
 # and pipeline that are contained in the variable `data_files`.
-pipeline_efficacy <- function(x){
+pipeline_efficacy <- function(x) {
+    fn <- x$filename
     
     # Retrieve the data and the pipeline for the condition
-    local_data <- data_list[[x$filename]]
+    local_data <- data_list[[fn]] %>% dplyr::filter(time < 5)
     fx <- names(conditions)
 
     # Check whether the data have a reference to the simulation number. If not, 
@@ -277,7 +281,7 @@ pipeline_efficacy <- function(x){
     # Save the original datafiles and give it a tag of "before"
     local_data %>% 
         dplyr::mutate(preprocessed = "before", 
-                      filename = x$filename, 
+                      filename = fn, 
                       condition = NA) %>% 
         data.table::fwrite(file.path("results", 
                                      "simulation_1", 
@@ -290,7 +294,7 @@ pipeline_efficacy <- function(x){
     # that this is the original data    
     result <- compute_summary_statistics(local_data, x$original) %>% 
         dplyr::mutate(preprocessed = "before", 
-                      filename = x$filename, 
+                      filename = fn, 
                       condition = NA) 
 
     data.table::fwrite(result, 
@@ -336,7 +340,7 @@ pipeline_efficacy <- function(x){
                            # file
                            result %>% 
                                dplyr::mutate(preprocessed = "after", 
-                                             filename = x$filename, 
+                                             filename = fn, 
                                              condition = fx[i]) %>% 
                                data.table::fwrite(file.path("results", 
                                                             "simulation_1", 
@@ -347,7 +351,7 @@ pipeline_efficacy <- function(x){
                            # data and save these results
                            result <- compute_summary_statistics(result, x$original) %>% 
                                dplyr::mutate(preprocessed = "after", 
-                                             filename = x$filename, 
+                                             filename = fn, 
                                              condition = fx[i]) 
 
                            data.table::fwrite(result, 
@@ -385,9 +389,9 @@ pipeline_efficacy <- function(x){
 
     # Save these results and delete the dataframes created here
     data.table::fwrite(summary_statistics, 
-                       file.path("results", "simulation_1", paste0("summary_", x$filename, ".csv")))
+                       file.path("results", "simulation_1", paste0("summary_", fn, ".csv")))
     data.table::fwrite(trajectories, 
-                       file.path("results", "simulation_1", paste0("trajectory_", x$filename, ".csv")))
+                       file.path("results", "simulation_1", paste0("trajectory_", fn, ".csv")))
 
     rm(list = c("local_data", "summary_statistics", "trajectories"))
     gc()
