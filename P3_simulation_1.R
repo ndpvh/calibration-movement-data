@@ -102,19 +102,10 @@ pipelines[["kalm_rev_cv"]] <- list(\(x) nameless::kalman_filter(x, reverse = TRU
 pipelines[["kalm_norev_cv"]] <- list(\(x) nameless::kalman_filter(x, reverse = FALSE, .by = "id", assumed_variance = 0.031^2))
 
 # Also add a loess of varying degrees
-pipelines[["loess_1_75"]] <- list(\(x) nameless::local_regression(x, degree = 1, span = 0.75, surface = "direct"))
-pipelines[["loess_2_75"]] <- list(\(x) nameless::local_regression(x, degree = 2, span = 0.75, surface = "direct"))
-pipelines[["loess_1_50"]] <- list(\(x) nameless::local_regression(x, degree = 1, span = 0.50, surface = "direct"))
-pipelines[["loess_2_50"]] <- list(\(x) nameless::local_regression(x, degree = 2, span = 0.50, surface = "direct"))
-pipelines[["loess_1_25"]] <- list(\(x) nameless::local_regression(x, degree = 1, span = 0.25, surface = "direct"))
-pipelines[["loess_2_25"]] <- list(\(x) nameless::local_regression(x, degree = 2, span = 0.25, surface = "direct"))
-
-pipelines[["loess_1_obs5"]] <- list(\(x) nameless::local_regression(x, degree = 1, span_obs = 5, surface = "direct"))
-pipelines[["loess_2_obs5"]] <- list(\(x) nameless::local_regression(x, degree = 2, span_obs = 5, surface = "direct"))
-pipelines[["loess_1_obs10"]] <- list(\(x) nameless::local_regression(x, degree = 1, span_obs = 10, surface = "direct"))
-pipelines[["loess_2_obs10"]] <- list(\(x) nameless::local_regression(x, degree = 2, span_obs = 10, surface = "direct"))
-pipelines[["loess_1_obs15"]] <- list(\(x) nameless::local_regression(x, degree = 1, span_obs = 15, surface = "direct"))
-pipelines[["loess_2_obs15"]] <- list(\(x) nameless::local_regression(x, degree = 2, span_obs = 15, surface = "direct"))
+pipelines[["loess_1"]] <- list(\(x) nameless::local_regression(x, .by = "id", degree = 1))
+pipelines[["loess_2"]] <- list(\(x) nameless::local_regression(x, .by = "id", degree = 2))
+pipelines[["loess_3"]] <- list(\(x) nameless::local_regression(x, .by = "id", degree = 3))
+pipelines[["loess_4"]] <- list(\(x) nameless::local_regression(x, .by = "id", degree = 4))
 
 # Define the link between pipelines and data
 data_files <- data.frame(filename = rep(names(data_list), each = length(pipelines)), 
@@ -356,7 +347,7 @@ for(i in seq_len(nrow(data_files))) {
     ggplot2::ggsave(plt, 
                     filename = file.path("figures", 
                                          "simulation_1", 
-                                         "preprocessed", 
+                                         "tuning", 
                                          paste0(data_files$filename[i], "__", data_files$condition[i], ".png")),
                     width = 900 * 3, 
                     height = 1000 * 10,
