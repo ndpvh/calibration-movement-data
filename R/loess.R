@@ -18,7 +18,7 @@ local_regression <- function(data,
     # Create an internal function that will take in a single dataset (grouped by 
     # the argument provided here), do a cross-validation and then do the loess 
     # regression. Builds upon the locfit package for this.
-    loess <- function(grouped_data) {
+    local_loess <- function(grouped_data) {
         # Use a cross-validation method to find out which value of the span you would
         # like to use for the loess. Try a whole range between 10% to 90%. Given that 
         # locfit is quite fast, we can do this quite exhaustively. (9,000,000 rows, 
@@ -31,6 +31,12 @@ local_regression <- function(data,
         xy_data <- data.frame(z = c(grouped_data$x, grouped_data$y), 
                               time = c(grouped_data$time, max(grouped_data$time) + grouped_data$time))
     
+	# Correct the number of spans to use in the cross-validation to ensure that
+	# you have enough data.
+	data_points <- floor(nrow(grouped_data) * spans)
+	spans <- spans[data_points >= degree + 2]
+
+	# Perform the actual cross-validation
         fits <- sapply(spans, 
                        \(x) locfit::gcv(z ~ locfit::lp(time, 
                                                        deg = degree, 
@@ -38,9 +44,9 @@ local_regression <- function(data,
                                         data = xy_data,
                                         ...)) 
     
-        # Select that span that maximizes the likelihood, as this one is most closely 
-        # related to the RMSE within this package 
-        span <- spans[fits[1,] == max(fits[1,])]
+        # Select that span that minimizes the generalized CV score, as this one is 
+        # most closely# related to the RMSE within this package 
+        span <- spans[fits[4,] == min(fits[4,])]
         if(length(span) > 1) {
             span <- mean(span)
         }
@@ -68,12 +74,15 @@ local_regression <- function(data,
     }
 
     if(is.null(.by)) {
-        return(loess(data))
+        result <- local_loess(data)
     } else {
         groups <- unique(data[, .by])
         filtered <- lapply(groups, 
-                           \(x) loess(data[data[, .by] == x, ]))
+                           \(x) local_loess(data[data[, .by] == x, ]))
                            
-        return(do.call("rbind", filtered))
+        result <- do.call("rbind", filtered)
     }
+
+    gc()
+    return(result)
 }
