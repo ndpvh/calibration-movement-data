@@ -13,6 +13,7 @@
 ################################################################################
 
 devtools::load_all()
+library(locfit)
 
 ################################################################################
 # PRELIMINARIES
@@ -21,7 +22,7 @@ devtools::load_all()
 # Parallellization
 #-------------------------------------------------------------------------------
 
-n_cores <- 3 #max(c(parallel::detectCores() - 1, 1))
+n_cores <- 30 #max(c(parallel::detectCores() - 1, 1))
 
 
 
@@ -269,7 +270,7 @@ pipeline_efficacy <- function(x) {
     fn <- x$filename
     
     # Retrieve the data and the pipeline for the condition
-    local_data <- data_list[[fn]] %>% dplyr::filter(time < 5)
+    local_data <- data_list[[fn]]
     fx <- names(conditions)
 
     # Check whether the data have a reference to the simulation number. If not, 
@@ -334,7 +335,7 @@ pipeline_efficacy <- function(x) {
                                                     dplyr::mutate(nsim = j) %>% 
                                                     return()
                                             })
-                           result <- tryCatch(do.call("rbind", result), error = function(e) browser())
+                           result <- do.call("rbind", result)
 
                            # Save this preprocessed trajectory in a temporary 
                            # file
@@ -386,6 +387,8 @@ pipeline_efficacy <- function(x) {
     summary_statistics <- tryCatch(do.call("rbind", summary_statistics) %>% 
         dplyr::relocate(filename, condition, preprocessed, nsim),
         error = function(e) browser())
+    trajectories <- do.call("rbind", trajectories) %>%
+	    dplyr::relocate(filename, condition, preprocessed, nsim)
 
     # Save these results and delete the dataframes created here
     data.table::fwrite(summary_statistics, 
