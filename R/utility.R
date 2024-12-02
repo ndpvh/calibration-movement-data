@@ -1,5 +1,6 @@
 # Imports from other packages
 #' @importFrom magrittr %>%
+#' @import locfit
 
 # A vectorized sequence function
 multi_seq <- Vectorize(seq.default, 
