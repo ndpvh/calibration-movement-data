@@ -120,7 +120,7 @@ pipeline_efficiency <- function(data,
         tidyr::nest()
 
     # Get the names of the functions
-    function_names <- if(!is.null(names(fx))) names(fx) else seq_len(length(fx))
+    function_names <- if(!is.null(names(fx))) names(fx) else paste("prep_", seq_len(length(fx)))
 
     # Create function that will do the preprocessing on the local level, 
     # depending only on an index of the pipeline to use in `fx`
@@ -149,7 +149,7 @@ pipeline_efficiency <- function(data,
         # Save this preprocessed trajectory in a temporary file
         data %>% 
             dplyr::mutate(preprocessed = "after", 
-                          preprocessing_function = funtion_names[i]) %>% 
+                          preprocessing_function = function_names[i]) %>% 
             add_metadata(metadata) %>% 
             data.table::fwrite(file.path(path,
                                          "tmp_trajectory", 
