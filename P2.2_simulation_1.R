@@ -93,7 +93,7 @@ mw <- list(\(x) nameless::average(x,
     lapply(function(x) {
                factory <- \(y) nameless::moving_window(y, 
                                                        span = 1, 
-                                                       fx = x, 
+                                                       fx = x,
                                                        .by = "id")
                return(factory)
            }) %>% 
@@ -107,11 +107,11 @@ mw <- list(\(x) nameless::average(x,
 # (`reverse = TRUE`).
 kalm <- list("kalm" = \(x) nameless::kalman_filter(x, 
                                                    assumed_variance = 0.031^2,
-                                                   reverse = FALSE, 
+                                                   reverse = FALSE,
                                                    .by = "id"), 
              "kalm-rev" = \(x) nameless::kalman_filter(x, 
                                                        assumed_variance = 0.031^2, 
-                                                       reverse = TRUE, 
+                                                       reverse = TRUE,
                                                        .by = "id"))
 
 # Define the LOESS and LOWESS. Here, we differentiate between the degree of the 
@@ -209,7 +209,8 @@ for(i in seq_len(nrow(data_files))) {
     # Actually preprocess the file
     nameless::pipeline_efficiency(data_list[[data_files$filename[i]]], 
                                   conditions, 
-                                  .by = c("nsim", "id"), 
+                                  .by = "nsim", 
+                                  summary.by = "id",
                                   filename = data_files$filename[i], 
                                   metadata = list("filename" = data_files$filename[i]), 
                                   n_cores = n_cores)
