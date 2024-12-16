@@ -6,7 +6,8 @@
 #' @param data Data.frame containing the columns in \code{.vars} and for which 
 #' to compute the summary statistics.
 #' @param fx List of functions that compute the summary statistics of interest.
-#' Should take in two numeric vectors.
+#' Should take in two numeric vectors. If named, the columns will be named after
+#' the names of the list. Otherwise will be assigned another unique name.
 #' @param .vars Character vector or matrix containing the columns for which to 
 #' compute the summary statistics. If matrix, each row should contain the columns
 #' to compare.
@@ -30,31 +31,32 @@ summary_statistics <- function(data,
     # delete those that cannot be found
     idx <- sapply(.by, \(x) !is.null(data[, x]))
     .by <- .by[idx]
+
+    # Check if we can extract column names
+    columns <- if(!is.null(names(fx))) names(fx) else paste("fx_", 1:length(fx))
     
     # Group the data and create a new data.frame that will contain all results
     grouped_data <- data %>% 
-        dplyr::group_by(tidyselect::all_of(.by))
+        dplyr::group_by_at(dplyr::vars(.by))
 
     results <- grouped_data %>% 
         dplyr::summarize() %>% 
         list()
 
     # Loop over all functions and add their values to the dataframe.
-    for(i in fx) {
+    for(i in seq_along(fx)) {
         for(j in seq_len(nrow(.vars))) {
-            # Get the name of the function. Will be used as column name for its 
-            # output
-            column <- i %>% 
-                substitute() %>% 
-                as.character() %>% 
-                paste0("_", .vars[j, 1], vars[j, 2])
-    
             # Add the summary statistics to the results list
             my_result <- grouped_data %>% 
-                dplyr::summarize(result = i(tidyselect::all_of(.vars[j, 1]), 
-                                            tidyselect::all_of(.vars[j, 2]))) %>% 
+                dplyr::rename(eval_1 = .vars[j, 1], 
+                              eval_2 = .vars[j, 2]) %>% 
+                dplyr::summarize(result = fx[[i]](eval_1, eval_2)) %>% 
                 dplyr::select(result) %>% 
-                setNames(column)
+                setNames(paste0(columns[i], 
+                                "__", 
+                                .vars[j, 1], 
+                                "_", 
+                                .vars[j, 2]))
     
             results <- append(results, my_result)
         }

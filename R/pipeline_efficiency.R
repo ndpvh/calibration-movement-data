@@ -24,6 +24,8 @@
 #' @param .vars Character vector or matrix containing the columns for which to 
 #' compute the summary statistics. If matrix, each row should contain the columns
 #' to compare. Defaults to x, y, and distance.
+#' @param summary.by Character vector containing variables to group by when 
+#' creating the summary statistics. Defaults to \code{"id"}.
 #' @param path Path under which to save the datafiles that result from this 
 #' function. Defaults to a "results" folder at the current directory.
 #' @param filename Name to use as an identifier for the results of this analysis.
@@ -42,8 +44,11 @@
 pipeline_efficiency <- function(data, 
                                 fx, 
                                 .by = NULL,
-                                summary = list(bias, rmse, mae),
+                                summary = list("bias" = bias, 
+                                               "rmse" = rmse, 
+                                               "mae" = mae),
                                 .vars = c("X", "Y", "Dist", "x", "y", "dist"),
+                                summary.by = "id",
                                 path = file.path(".", "results"), 
                                 filename = "",
                                 metadata = list(),
@@ -57,6 +62,12 @@ pipeline_efficiency <- function(data,
     # preprocessing itself.
     if(!is.null(.by) & is.null(data[, .by])) {
         data[, .by] <- 1
+    }
+
+    # Adjust the summary.by argument when there are other groups to add for the
+    # computation of the summary statistics.
+    if(!is.null(.by)) {
+        summary.by <- c(.by, summary.by)
     }
 
     # Check whether the folders "tmp_trajectory" and "tmp_summary" exist. If not, 
@@ -88,10 +99,11 @@ pipeline_efficiency <- function(data,
                       Dist = sqrt(X^2 + Y^2)) %>% 
         summary_statistics(fx = summary, 
                            .vars = .vars, 
-                           .by = .by) %>% 
+                           .by = summary.by) %>% 
         dplyr::mutate(preprocessed = "before",
                       preprocessing_function = NA) %>% 
-        add_metadata(metadata = metadata)
+        add_metadata(metadata = metadata) %>% 
+        suppressMessages()
 
     data.table::fwrite(result, 
                        file.path(path, "tmp_summary", "tmp0.csv"))
@@ -101,10 +113,10 @@ pipeline_efficiency <- function(data,
     ############################################################################
     # Step 2: Preprocessing
 
-    # Nest the different simulations in `local_data` so that we can use it 
+    # Nest the different simulations in `data` so that we can use it 
     # in the mclapply later.
     data <- data %>% 
-        dplyr::group_by(tidyselect::all_of(.by)) %>% 
+        dplyr::group_by_at(dplyr::vars(.by)) %>% 
         tidyr::nest()
 
     # Get the names of the functions
@@ -116,20 +128,26 @@ pipeline_efficiency <- function(data,
         # Print something so that we know where the function is at
         cat("\rExecuting pipeline", i, "of", length(fx))
 
-        # Execute the pipeline for each of the nested data structures in `data``
-        result <- lapply(seq_len(nrow(local_data)), 
+        # Execute the pipeline for each of the nested data structures in `data`.
+        # Then append the result to the existing dataframe to retain all needed 
+        # information.
+        result <- lapply(seq_len(nrow(data)), 
                          function(j) {
                              data$data[[j]] %>% 
                                  as.data.frame() %>% 
                                  nameless::execute_pipeline(fx[[i]], 
                                                             report = FALSE) %>% 
+                                 list() %>% 
                                  return()
                          })
 
-        result <- do.call("rbind", result)
+        data$data <- result
+        data <- data %>% 
+            tidyr::unnest(data) %>% 
+            tidyr::unnest(data)
 
         # Save this preprocessed trajectory in a temporary file
-        result %>% 
+        data %>% 
             dplyr::mutate(preprocessed = "after", 
                           preprocessing_function = funtion_names[i]) %>% 
             add_metadata(metadata) %>% 
@@ -140,19 +158,20 @@ pipeline_efficiency <- function(data,
         # Compute the summary statistics from the preprocessed 
         # data and save these results in a temporary file
         browser()
-        result <- result %>% 
+        data <- data %>% 
             dplyr::mutate(X = x_original, 
                           Y = y_original, 
                           dist = sqrt(x^2 + y^2),
                           Dist = sqrt(X^2 + Y^2)) %>% 
             summary_statistics(fx = summary,
                                .vars = .vars,
-                               .by = .by) %>% 
+                               .by = summary.by) %>% 
             dplyr::mutate(preprocessed = "after", 
                           preprocessing_function = funtion_names[i]) %>% 
-            add_metadata(metadata)
+            add_metadata(metadata) %>% 
+            suppressMessages()
 
-        data.table::fwrite(result, 
+        data.table::fwrite(data, 
                            file.path(path, "tmp_summary", paste0("tmp", i, ".csv")))
 
         # Remove some of these variables and do garbage collection. Helps in 
@@ -163,8 +182,7 @@ pipeline_efficiency <- function(data,
         return(NULL)
     }
 
-    # Parallellize the execution of each of the pipelines, given the nested 
-    # structure in `local_data`
+    # Parallellize the execution of each of the pipelines
     parallel::mclapply(seq_along(fx), 
                        process,
                        mc.cores = n_cores)
