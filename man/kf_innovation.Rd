@@ -4,23 +4,53 @@
 \alias{kf_innovation}
 \title{Innovation step in the Kalman filter}
 \usage{
-kf_innovation(y, x, H, V, F)
+kf_innovation(z, x, P, H, R)
 }
 \arguments{
-\item{y}{Vector of measured values at time t + 1}
+\item{z}{Vector of measured values at time t + 1}
 
 \item{x}{Vector of predicted values of the movement equation at time t + 1.}
 
+\item{P}{Cholesky decomposition of the estimation covariance matrix at time 
+t + 1.}
+
 \item{H}{Matrix relating the values in x to the values in y.}
 
-\item{V}{Cholesky decomposition of the measurement noise covariance matrix.}
-
-\item{F}{Cholesky decomposition of the estimation covariance matrix at time t + 1.}
+\item{R}{Cholesky decomposition of the measurement noise covariance matrix.#'}
 }
 \value{
-Smoothed dataframe with a similar structure as `data`
+List of the innovation ("y"), the Cholesky decomposition of its 
+covariance matrix ("S"), and the Kalman gain ("K")
 }
 \description{
-Assumptions in the model:
- a) Mean of the process noise is equal to 0
+In the innovation step, we will define the innovation (or error) of the 
+measurement if the movement equation is correct in its prediction. This 
+expected innovation is defined as:
+}
+\details{
+\begin{equation}
+    y = z - Hx
+\end{equation}
+where z is the measurement, H is the measurement matrix, and x is the 
+prediction.
+
+Additionally, we compute the covariance of this innovation, which is defined
+as:
+
+\begin{equation}
+    S = H P H^T + R
+\end{equation}
+where R is the (assumed) measurement covariance. It is interesting to note 
+that the value of S is always symmetric for each value of H. Whether its 
+Cholesky decomposition exists, however, will depend on H as well as P.
+
+Finally, we use the covariance of the prediction and the measurement 
+covariance to define the Kalman gain, here computed as:
+
+\begin{equation}
+    K = P H^T S^{-1}
+\end{equation}
+making the Kalman gain a measure of how much we can trust the prediction 
+(pitting prediction covariance over the total variance, i.e. prediction 
+covariance + measurement covariance).
 }

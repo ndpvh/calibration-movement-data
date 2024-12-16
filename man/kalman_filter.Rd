@@ -4,7 +4,15 @@
 \alias{kalman_filter}
 \title{Smooth using a Kalman filter}
 \usage{
-kalman_filter(data, reverse = TRUE, model = "constant_velocity", .by = NULL)
+kalman_filter(
+  data,
+  reverse = TRUE,
+  internal = FALSE,
+  model = "constant_velocity",
+  .by = NULL,
+  assumed_variance = 0.031^2,
+  check = FALSE
+)
 }
 \arguments{
 \item{data}{Dataframe that contains the columns `time`, `id`, `x`, and `y`.}

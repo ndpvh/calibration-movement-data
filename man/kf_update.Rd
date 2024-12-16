@@ -4,24 +4,44 @@
 \alias{kf_update}
 \title{Update step in the Kalman filter}
 \usage{
-kf_update(x, z, H, V, F, K)
+kf_update(x, P, y, H, K)
 }
 \arguments{
 \item{x}{Vector of predicted values of the movement equation at time t + 1.}
 
-\item{z}{Vector of innovations at time t + 1}
+\item{P}{Cholesky decomposition of the estimation covariance matrix at time 
+t + 1.}
 
-\item{H}{Matrix relating the values in x to the values in y.}
+\item{y}{Vector of innovations at time t + 1}
 
-\item{V}{Cholesky decomposition of the measurement noise covariance matrix.}
+\item{H}{Measurement matrix connecting measurement to movement.}
 
-\item{F}{Cholesky decomposition of the estimation covariance matrix at time t + 1.}
-
-\item{K}{Kalman gain at this updating step}
+\item{K}{Kalman gain}
 }
 \value{
-Smoothed dataframe with a similar structure as `data`
+List containing the smoothed value of x ("x") together with the  
+Cholesky decomposition of its covariance ("P")
 }
 \description{
-Update step in the Kalman filter
+In the update step, we use the measurement and the predicted value of the 
+variable x and use both to make a good guess of what the "real" value of 
+x might be (as well as what the uncertainty around this guess is).
+}
+\details{
+We do this using the following equation:
+
+\begin{equation}
+    x_t = x + K y
+\end{equation}
+where x is the predicted value for the variable (coming from the prediction 
+step), K is the Kalman gain, and y is the innovation (both coming from the 
+innovation step).
+
+For the covariance, we use the following equation:
+
+\begin{equation}
+    P_t = (I - K H) P
+\end{equation}
+where I is the identity matrix and P is the prediction covariance coming from 
+the prediction step.
 }

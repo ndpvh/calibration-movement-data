@@ -4,7 +4,7 @@
 \alias{local_regression}
 \title{Filter data through LOESS}
 \usage{
-local_regression(data, degree = 1)
+local_regression(data, .by = NULL, degree = 1, ...)
 }
 \arguments{
 \item{data}{Dataframe that contains the columns `time`, `id`, `x`, and `y`.}

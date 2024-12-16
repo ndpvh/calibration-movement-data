@@ -4,15 +4,20 @@
 \alias{kalman_filter_individual}
 \title{Use Kalman filter on the data}
 \usage{
-kalman_filter_individual(data, reverse = TRUE, model = "constant_velocity")
+kalman_filter_individual(
+  data,
+  reverse = TRUE,
+  model = "constant_velocity",
+  assumed_variance = 0.031^2
+)
 }
 \arguments{
 \item{data}{Dataframe that contains the columns `time`, `id`, `x`, and `y`.}
 
-\item{model}{String denoting which model to use.}
+\item{model}{String denoting which of the models to use.}
 }
 \value{
-Smoothed dataframe with a similar structure as `data`
+Smoothed dataframe with the same structure as `data`
 }
 \description{
 Use Kalman filter on the data
