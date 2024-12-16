@@ -39,15 +39,15 @@
 #' specified by the user
 #' 
 #' @export
-pipeline_efficacy <- function(data, 
-                              fx, 
-                              .by = NULL,
-                              summary = list(bias, rmse, mae),
-                              .vars = c("X", "Y", "Dist", "x", "y", "dist"),
-                              path = file.path(".", "results"), 
-                              filename = "",
-                              metadata = list(),
-                              n_cores = 1) {
+pipeline_efficiency <- function(data, 
+                                fx, 
+                                .by = NULL,
+                                summary = list(bias, rmse, mae),
+                                .vars = c("X", "Y", "Dist", "x", "y", "dist"),
+                                path = file.path(".", "results"), 
+                                filename = "",
+                                metadata = list(),
+                                n_cores = 1) {
 
     ############################################################################
     # Step 1: Preliminary information
