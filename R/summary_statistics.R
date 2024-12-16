@@ -51,6 +51,7 @@ summary_statistics <- function(data,
                 dplyr::rename(eval_1 = .vars[j, 1], 
                               eval_2 = .vars[j, 2]) %>% 
                 dplyr::summarize(result = fx[[i]](eval_1, eval_2)) %>% 
+                dplyr::ungroup() %>% 
                 dplyr::select(result) %>% 
                 setNames(paste0(columns[i], 
                                 "__", 
