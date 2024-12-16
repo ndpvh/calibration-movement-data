@@ -157,7 +157,6 @@ pipeline_efficiency <- function(data,
 
         # Compute the summary statistics from the preprocessed 
         # data and save these results in a temporary file
-        browser()
         data <- data %>% 
             dplyr::mutate(X = x_original, 
                           Y = y_original, 
@@ -167,7 +166,7 @@ pipeline_efficiency <- function(data,
                                .vars = .vars,
                                .by = summary.by) %>% 
             dplyr::mutate(preprocessed = "after", 
-                          preprocessing_function = funtion_names[i]) %>% 
+                          preprocessing_function = function_names[i]) %>% 
             add_metadata(metadata) %>% 
             suppressMessages()
 
