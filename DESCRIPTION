@@ -34,6 +34,7 @@ Collate:
     'polynomial_distortion.R'
     'pipeline_efficiency.R'
     'summary_statistics.R'
+    'compare_distribution.R'
     'visualization.R'
 Suggests: 
     fs,
