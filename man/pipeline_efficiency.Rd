@@ -8,8 +8,9 @@ pipeline_efficiency(
   data,
   fx,
   .by = NULL,
-  summary = list(bias, rmse, mae),
+  summary = list(bias = bias, rmse = rmse, mae = mae),
   .vars = c("X", "Y", "Dist", "x", "y", "dist"),
+  summary.by = "id",
   path = file.path(".", "results"),
   filename = "",
   metadata = list(),
@@ -35,6 +36,9 @@ preprocessing. Defaults to computation of the RMSE, MAE, and mean difference.}
 \item{.vars}{Character vector or matrix containing the columns for which to 
 compute the summary statistics. If matrix, each row should contain the columns
 to compare. Defaults to x, y, and distance.}
+
+\item{summary.by}{Character vector containing variables to group by when 
+creating the summary statistics. Defaults to \code{"id"}.}
 
 \item{path}{Path under which to save the datafiles that result from this 
 function. Defaults to a "results" folder at the current directory.}

@@ -11,7 +11,8 @@ summary_statistics(data, fx, .vars, .by = "id")
 to compute the summary statistics.}
 
 \item{fx}{List of functions that compute the summary statistics of interest.
-Should take in two numeric vectors.}
+Should take in two numeric vectors. If named, the columns will be named after
+the names of the list. Otherwise will be assigned another unique name.}
 
 \item{.vars}{Character vector or matrix containing the columns for which to 
 compute the summary statistics. If matrix, each row should contain the columns
