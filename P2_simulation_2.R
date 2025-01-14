@@ -22,7 +22,7 @@ library(locfit)
 # Parallellization
 #-------------------------------------------------------------------------------
 
-n_cores <- 1 #max(c(parallel::detectCores() - 1, 1))
+n_cores <- 3 #max(c(parallel::detectCores() - 1, 1))
 
 
 
@@ -146,7 +146,7 @@ for(i in c("trajectory", "summary")) {
         # Bind these data together
         files <- do.call("rbind", files)
         data.table::fwrite(files, 
-                           file.path(".", "results", "simulation_2", paste0("data_", i, ".csv")))
+                           file.path(".", "results", "simulation_2", paste0(i, "_data.csv")))
 }
 
 
@@ -156,4 +156,184 @@ for(i in c("trajectory", "summary")) {
 ################################################################################
 # VISUALIZATION
 
+################################################################################
+# VISUALIZATION
+
+#-------------------------------------------------------------------------------
+# Per file
+#-------------------------------------------------------------------------------
+
+# Load the needed files
+filenames <- paste("data", 
+                   c("R10", "U10", "T10", "R6R", "U6R", "T6R", "R6N", "U6N", "T6N"),
+                   sep = "_") %>% 
+    paste(".csv", sep = "")
+
+trajectory_results <- lapply(filenames, 
+                             \(x) data.table::fread(file.path(".", 
+                                                              "results", 
+                                                              "simulation_2", 
+                                                              paste0("trajectory_", x)), 
+                                                    data.table = FALSE) %>% 
+                                 dplyr::rename(condition = preprocessing_function))
+summary_results <- lapply(filenames, 
+                          \(x) data.table::fread(file.path(".", 
+                                                           "results", 
+                                                           "simulation_2", 
+                                                           paste0("summary_", x)), 
+                                                 data.table = FALSE) %>% 
+                              dplyr::rename(condition = preprocessing_function))
+
+# Create all figures
+columns <- c("bias_diff_x", 
+             "bias_diff_y", 
+             "bias_dist", 
+             "rmse_diff_x", 
+             "rmse_diff_y", 
+             "rmse_dist", 
+             "mae_diff_x", 
+             "mae_diff_y", 
+             "mae_dist")
+
+for(i in seq_along(filenames)) {
+    for(j in columns) {
+        # Bar plot
+        plt <- barplot(summary_results[[i]], j)
+        ggplot2::ggsave(plt[["plot"]], 
+                        filename = file.path("figures", 
+                                            "simulation_2", 
+                                            "barplot summary statistics",
+                                            paste0(filenames[i],
+                                                   "_",
+                                                   j, 
+                                                   ".png")), 
+                        width = 15 * 600,
+                        height = 15 * 650, 
+                        unit = "px")
+
+        # Histograms
+        plt <- histogram(summary_results[[i]], j)
+
+        ggplot2::ggsave(plt, 
+                        filename = file.path("figures", 
+                                            "simulation_2", 
+                                            "histogram summary statistics",
+                                            paste0(filenames[i],
+                                                   "_",
+                                                   j, 
+                                                   ".png")), 
+                        width = 15 * 600,
+                        height = 15 * 650, 
+                        unit = "px")
+    }
+
+    # Get all unique preprocessing pipelines and plot the trajectories for 
+    # these
+    for(j in unique(trajectory_results$condition)[-1]) {
+        # Trajectories
+        plt <- trajectory_results %>% 
+            dplyr::filter(nsim == 1) %>% 
+            dplyr::filter(condition %in% c("", j)) %>% 
+            trajectory()
+        ggplot2::ggsave(plt, 
+                        filename = file.path("figures", 
+                                            "simulation_2", 
+                                            "trajectory summary statistics",
+                                            paste0(filenames[i],
+                                                   "_",
+                                                   j, 
+                                                   ".png")), 
+                        width = 900 * 3, 
+                        height = 1000 * 10,
+                        unit = "px")
+    }  
+}
+
+
+
+
+
+
+#-------------------------------------------------------------------------------
+# All files together
+#-------------------------------------------------------------------------------
+
+# Load the needed files
+trajectory_results <- data.table::fread(file.path(".", 
+                                                  "results",
+                                                  "simulation_2",
+                                                  "trajectory_data.csv"),
+                                        data.table = FALSE)
+summary_results <- data.table::fread(file.path(".", 
+                                               "results",
+                                               "simulation_2",
+                                               "summary_data.csv"),
+                                     data.table = FALSE)
+
+# Create all figures
+columns <- c("mean_diff_x", 
+             "mean_diff_y", 
+             "mean_dist", 
+             "rmse_diff_x", 
+             "rmse_diff_y", 
+             "rmse_dist", 
+             "mae_diff_x", 
+             "mae_diff_y", 
+             "mae_dist")
+
+for(j in columns) {
+    # Bar plot
+    plt <- barplot(summary_results, j)
+    ggplot2::ggsave(plt[["plot"]], 
+                    filename = file.path("figures", 
+                                         "simulation_2", 
+                                         "barplot summary statistics",
+                                         paste0("data_", 
+                                                j, 
+                                                ".png")), 
+                    width = 15 * 600,
+                    height = 15 * 650, 
+                    unit = "px")
+
+    data.table::fwrite(plt[["data"]], 
+                       file.path("results", 
+                                 "simulation_2", 
+                                 paste0("data_", 
+                                        j,
+                                        "__ci.csv")))
+
+    # Histograms
+    plt <- histogram(summary_results, j)
+
+    ggplot2::ggsave(plt, 
+                    filename = file.path("figures", 
+                                         "simulation_2", 
+                                         "histogram summary statistics",
+                                         paste0("data_", 
+                                                j, 
+                                                ".png")), 
+                    width = 15 * 600,
+                    height = 15 * 650, 
+                    unit = "px")
+}
+
+# Get all unique preprocessing pipelines and plot the trajectories for 
+# these
+for(j in unique(trajectory_results$condition)[-1]) {
+    # Trajectories
+    plt <- trajectory_results %>% 
+        dplyr::filter(nsim == 1) %>% 
+        dplyr::filter(condition %in% c("", j)) %>% 
+        trajectory()
+    ggplot2::ggsave(plt, 
+                    filename = file.path("figures", 
+                                         "simulation_2", 
+                                         "trajectory summary statistics",
+                                         paste0("data_", 
+                                                j, 
+                                                ".png")), 
+                    width = 900 * 3, 
+                    height = 1000 * 10,
+                    unit = "px")
+}  
 
