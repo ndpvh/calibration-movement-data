@@ -13,6 +13,7 @@
 ################################################################################
 
 devtools::load_all()
+library(locfit)
 
 ################################################################################
 # PRELIMINARIES
@@ -21,7 +22,7 @@ devtools::load_all()
 # Parallellization
 #-------------------------------------------------------------------------------
 
-n_cores <- 1 #max(c(parallel::detectCores() - 1, 1))
+n_cores <- 30 #max(c(parallel::detectCores() - 1, 1))
 
 
 
@@ -263,17 +264,6 @@ for(i in c("fixed", "movement")) {
 # VISUALIZATION
 
 #-------------------------------------------------------------------------------
-# Different plots
-#-------------------------------------------------------------------------------
-
-
-
-
-
-
-
-
-#-------------------------------------------------------------------------------
 # Per file
 #-------------------------------------------------------------------------------
 
@@ -304,7 +294,7 @@ columns <- c("mean_diff_x",
 for(i in seq_along(results)) {
     for(j in columns) {
         # Bar plot
-        plt <- barplot(summary_results[[i]], j)
+        plt <- nameless::barplot(summary_results[[i]], j)
         ggplot2::ggsave(plt, 
                         filename = file.path("figures", 
                                              "simulation_1", 
@@ -320,7 +310,7 @@ for(i in seq_along(results)) {
                         unit = "px")
 
         # Histograms
-        plt <- histogram(summary_results[[i]], j)
+        plt <- nameless::histogram(summary_results[[i]], j)
 
         ggplot2::ggsave(plt, 
                         filename = file.path("figures", 
@@ -344,7 +334,7 @@ for(i in seq_along(results)) {
         plt <- trajectory_results[[i]] %>% 
             dplyr::filter(nsim == 1) %>% 
             dplyr::filter(condition %in% c("", j)) %>% 
-            trajectory()
+            nameless::trajectory()
     
         ggplot2::ggsave(plt, 
                         filename = file.path("figures", 
@@ -394,7 +384,7 @@ columns <- c("mean_diff_x",
 for(i in seq_along(filenames)) {
     for(j in columns) {
         # Bar plot
-        plt <- barplot(summary_results[[i]], j)
+        plt <- nameless::barplot(summary_results[[i]], j)
         ggplot2::ggsave(plt[["plot"]], 
                         filename = file.path("figures", 
                                              "simulation_1", 
@@ -409,18 +399,8 @@ for(i in seq_along(filenames)) {
                         height = 15 * 650, 
                         unit = "px")
 
-        data.table::fwrite(plt[["data"]], 
-                           file.path("results", 
-                                     "simulation_1", 
-                                     paste0(stringr::str_split_i(filenames[i], 
-                                                                 pattern = ".csv", 
-                                                                 i = 1),
-                                            "__", 
-                                            j,
-                                            "__ci.csv")))
-
         # Histograms
-        plt <- histogram(summary_results[[i]], j)
+        plt <- nameles::histogram(summary_results[[i]], j)
 
         ggplot2::ggsave(plt, 
                         filename = file.path("figures", 
@@ -444,7 +424,7 @@ for(i in seq_along(filenames)) {
         plt <- trajectory_results[[i]] %>% 
             dplyr::filter(nsim == 1) %>% 
             dplyr::filter(condition %in% c("", j)) %>% 
-            trajectory()
+            nameless::trajectory()
     
         ggplot2::ggsave(plt, 
                         filename = file.path("figures", 
