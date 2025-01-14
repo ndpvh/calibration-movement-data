@@ -47,7 +47,7 @@ pipeline_efficiency <- function(data,
                                 summary = list("bias" = bias, 
                                                "rmse" = rmse, 
                                                "mae" = mae),
-                                .vars = c("X", "Y", "Dist", "x", "y", "dist"),
+                                .vars = c("diff_x", "diff_y", "dist"),
                                 summary.by = "id",
                                 path = file.path(".", "results"), 
                                 filename = "",
@@ -95,8 +95,9 @@ pipeline_efficiency <- function(data,
     result <- data %>%
         dplyr::mutate(X = x_original, 
                       Y = y_original, 
-                      dist = sqrt(x^2 + y^2),
-                      Dist = sqrt(X^2 + Y^2)) %>% 
+                      diff_x = x - X, 
+                      diff_y = y - Y,
+                      dist = sqrt((x - X)^2 + (y - Y)^2)) %>% 
         summary_statistics(fx = summary, 
                            .vars = .vars, 
                            .by = summary.by) %>% 
@@ -160,8 +161,9 @@ pipeline_efficiency <- function(data,
         data <- data %>% 
             dplyr::mutate(X = x_original, 
                           Y = y_original, 
-                          dist = sqrt(x^2 + y^2),
-                          Dist = sqrt(X^2 + Y^2)) %>% 
+                          diff_x = x - X,
+                          diff_y = y - Y,
+                          dist = sqrt((x - X)^2 + (y - Y)^2)) %>% 
             summary_statistics(fx = summary,
                                .vars = .vars,
                                .by = summary.by) %>% 

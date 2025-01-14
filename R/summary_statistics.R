@@ -23,8 +23,8 @@ summary_statistics <- function(data,
                                .by = "id") {
 
     # Check and/or transform the .vars argument
-    if(!is.matrix(.vars)) {
-        .vars <- matrix(.vars, ncol = 2)
+    if(is.matrix(.vars)) {
+        .vars <- as.vector(.vars)
     }
 
     # Check whether the .by arguments are all available in the data. If not, 
@@ -45,19 +45,16 @@ summary_statistics <- function(data,
 
     # Loop over all functions and add their values to the dataframe.
     for(i in seq_along(fx)) {
-        for(j in seq_len(nrow(.vars))) {
+        for(j in seq_along(.vars)) {
             # Add the summary statistics to the results list
             my_result <- grouped_data %>% 
-                dplyr::rename(eval_1 = .vars[j, 1], 
-                              eval_2 = .vars[j, 2]) %>% 
-                dplyr::summarize(result = fx[[i]](eval_1, eval_2)) %>% 
+                dplyr::rename(eval = .vars[j]) %>% 
+                dplyr::summarize(result = fx[[i]](eval)) %>% 
                 dplyr::ungroup() %>% 
                 dplyr::select(result) %>% 
                 setNames(paste0(columns[i], 
-                                "__", 
-                                .vars[j, 1], 
                                 "_", 
-                                .vars[j, 2]))
+                                .vars[j]))
     
             results <- append(results, my_result)
         }
@@ -139,42 +136,35 @@ summary_statistics <- function(data,
 
 #' Compute Bias
 #' 
-#' @param x Numeric vector of values to be compared to \code{y}.
-#' @param y Numeric vector of values to be compared to \code{x}.
+#' @param x Numeric vector of values to for which to compute the statistic.
 #' 
 #' @return Numeric denoting the mean difference between the two vectors
 #' 
 #' @export
-bias <- function(x, y) {
-    (x - y) %>% 
-        mean() %>% 
-        return()
+bias <- function(x) {
+    return(mean(x))
 }
 
 #' Compute RMSE
 #' 
-#' @param x Numeric vector of values to be compared to \code{y}.
-#' @param y Numeric vector of values to be compared to \code{x}.
+#' @param x Numeric vector of values to for which to compute the statistic.
 #' 
 #' @return Numeric denoting the RMSE of the difference between the two vectors
 #' 
 #' @export
-rmse <- function(x, y) {
-    (x - y) %>% 
-        sd() %>% 
-        return()
+rmse <- function(x) {
+    return(sd(x))
 }
 
 #' Compute MAE
 #' 
-#' @param x Numeric vector of values to be compared to \code{y}.
-#' @param y Numeric vector of values to be compared to \code{x}.
+#' @param x Numeric vector of values to for which to compute the statistic.
 #' 
 #' @return Numeric denoting the MAE of the difference between the two vectors
 #' 
 #' @export
-mae <- function(x, y) {
-    (x - y) %>% 
+mae <- function(x) {
+    x %>% 
         abs() %>% 
         mean() %>% 
         return()
