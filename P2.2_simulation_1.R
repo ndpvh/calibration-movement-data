@@ -211,6 +211,7 @@ for(i in seq_len(nrow(data_files))) {
                                   conditions, 
                                   .by = "nsim", 
                                   summary.by = "id",
+                                  path = file.path(".", "results", "simulation_1"),
                                   filename = data_files$filename[i], 
                                   metadata = list("filename" = data_files$filename[i]), 
                                   n_cores = n_cores)
