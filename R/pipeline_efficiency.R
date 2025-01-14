@@ -213,7 +213,7 @@ pipeline_efficiency <- function(data,
     data.table::fwrite(trajectories, 
                        file.path(path, paste0("trajectory_", filename, ".csv")))
 
-    rm(list = c("local_data", "summary_statistics", "trajectories"))
+    rm(list = c("data", "summary_statistics", "trajectories"))
     gc()
 
     # Also delete all files in the temporary paths. We don't need them anymore.
