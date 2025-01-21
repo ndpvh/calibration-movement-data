@@ -10,12 +10,13 @@ devtools::load_all()
 # summary statistics for each simulation and condition. This will be used as the 
 # basis for the main analyses.
 movement <- c("fixed", "movement")
-errors <- c("R10", "R6N", "R6R",
-            "U10", "U6N", "U6R",
-            "T10", "T6N", "T6R")
+errors <- c("_R10", "_R6N", "_R6R",
+            "_U10", "_U6N", "_U6R",
+            "_T10", "_T6N", "_T6R",
+            "")
 files <- paste(rep(movement, each = length(errors)), 
                rep(errors, times = length(movement)), 
-               sep = "_")
+               sep = "")
 
 data <- lapply(files, 
                \(x) data.table::fread(file.path("results", 
@@ -24,21 +25,13 @@ data <- lapply(files,
                                       data.table = FALSE)) %>% 
     `names<-` (files)
 
-# Also make a general "movement" and "fixed" file that will combine all of the 
-# specific files. These will be used to determine which of the preprocessing 
-# pipelines can be used in the next step.
-data[["movement"]] <- do.call("rbind",
-                              data[grepl("movement", files, fixed = TRUE)])
-data[["fixed"]] <- do.call("rbind",
-                            data[grepl("fixed", files, fixed = TRUE)])
-
 # Define the columns in which we are interested
-columns <- c("mean_dist", "rmse_dist", "mae_dist")
+columns <- c("bias_dist", "rmse_dist", "mae_dist")
 
 # Loop over the different datafiles and compare the values of the summary 
 # statistics for each of the conditions to the values of these same statistics
 # before any preprocessing was done. 
-results <- lapply(data, 
+distribution <- lapply(data, 
                   function(x) {
                       # Separate the data from before and after the preprocessing
                       before <- dplyr::filter(x, preprocessed == "before")
@@ -47,7 +40,7 @@ results <- lapply(data,
                       # Nest the data based on the unique conditions in the 
                       # preprocessed data
                       after <- after %>%
-                          dplyr::group_by(condition) %>% 
+                          dplyr::group_by(preprocessing_function) %>% 
                           tidyr::nest()
 
                       # Loop over the different columns and do the comparisons 
@@ -85,7 +78,7 @@ results <- lapply(data,
                   }) %>% 
     `names<-` (names(data))
 
-saveRDS(results, 
+saveRDS(distribution, 
         file.path("results", "simulation_1", "difference_distribution.Rds"))
 
 
@@ -98,11 +91,11 @@ saveRDS(results,
 
 # Let's check which conditions were significant for the "fixed" and "movement"
 # datasets
-significant <- data.frame(condition = results[[1]]$condition,
-                          statistics = results[[1]]$statistic)
+significant <- data.frame(preprocessing_function = distribution[[1]]$preprocessing_function,
+                          statistics = distribution[[1]]$statistic)
 for(i in names(data)) {
-    significant[, i] <- results[[i]]$significant
-    significant[, paste0(i, "_effect")] <- results[[i]]$median_diff
+    significant[, i] <- distribution[[i]]$significant
+    significant[, paste0(i, "_effect")] <- distribution[[i]]$ci_diff_upper
 }
 
 # Inspect the results visually and try to come up with some pipelines to use in
@@ -117,8 +110,12 @@ for(i in names(data)) {
 #     but ensures some pipelines get picked even when all pipelines performed 
 #     bad in some datasets (e.g., time-related error has no significant pipelines
 #     that reduced the mean distance)
-statistics <- c("mean_dist", "rmse_dist", "mae_dist")
-results <- data.frame(condition = significant$condition[significant$statistics == "mean_dist"])
+statistics <- c("mae_dist", "rmse_dist")
+results <- data.frame(preprocessing_function = significant %>% 
+                          dplyr::filter(statistics == "bias_dist") %>% 
+                          dplyr::select(preprocessing_function) %>% 
+                          unlist() %>% 
+                          as.vector())
 for(i in statistics) {
     tmp <- significant %>% 
         dplyr::filter(statistics == i) %>% 
@@ -133,99 +130,18 @@ for(i in statistics) {
                       T6N = movement_T6N & movement_T6N_effect < 0 & fixed_T6N & fixed_T6N_effect < 0) %>%
         dplyr::rowwise() %>% 
         dplyr::mutate(selected = sum(dplyr::across(R10:T6N)) / 9,
-                      selected = selected >= 0.5) %>% 
+                      selected = selected >= 2/3) %>% 
         dplyr::ungroup() %>% 
-        dplyr::select(condition, selected)
+        dplyr::select(preprocessing_function, selected)
 
-    tmp <- setNames(tmp, c("condition", i))
+    tmp <- setNames(tmp, c("preprocessing_function", i))
 
-    results <- dplyr::full_join(results, tmp, by = "condition")    
+    results <- dplyr::full_join(results, tmp, by = "preprocessing_function")    
 }
 
 View(results)
-## In general: RMSE did not deliver any pipelines. Mean distance and MAE 
-## delivered the same pipelines, namely: LOESS 2 and 3, Kalman filter, and the 
-## combination of these two. These will be used in the next step.
-
-## Additional results from inspection: Percentage significant and percentage 
-## negative per statistic
-##  - Mean distances:
-##     - Fixed:
-##
-##                  significance        negative
-##          - R10:  158/158             158/158
-##          - R6R:  157/158             158/158
-##          - R6N:  158/158             158/158
-##          - U10:  158/158             158/158
-##          - U6R:  157/158             158/158
-##          - U6N:  158/158             158/158
-##          - T10:  158/158             158/158
-##          - T6R:  157/158             158/158
-##          - T6N:  158/158             158/158
-##            
-##      - Movement
-##
-##                  significance        negative
-##          - R10:  69/158              158/158
-##          - R6R:  58/158              59/158
-##          - R6N:  15/158              64/158
-##          - U10:  69/158              158/158
-##          - U6R:  57/158              63/158
-##          - U6N:  11/158              64/158
-##          - T10:  0/158               86/158
-##          - T6R:  134/158             8/158
-##          - T6N:  130/158             4/158
-
-##  - RMSE
-##     - Fixed
-##
-##                  significance        negative
-##          - R10:  158/158             158/158
-##          - R6R:  158/158             158/158
-##          - R6N:  154/158             158/158
-##          - U10:  158/158             158/158
-##          - U6R:  158/158             158/158
-##          - U6N:  155/158             158/158
-##          - T10:  117/158             158/158
-##          - T6R:  91/158              158/158
-##          - T6N:  132/158             158/158
-##            
-##      - Movement:
-##
-##                  significance        negative
-##          - R10:  14/158              158/158
-##          - R6R:  67/158              59/158
-##          - R6N:  73/158              42/158
-##          - U10:  2/158               158/158
-##          - U6R:  65/158              59/158
-##          - U6N:  73/158              38/158
-##          - T10:  18/158              12/158
-##          - T6R:  127/158             4/158
-##          - T6N:  134/158             7/158
-##
-##  - MAE:
-##      - Fixed:
-##
-##                  significance        negative
-##          - R10:  158/158             158/158
-##          - R6R:  158/158             158/158
-##          - R6N:  157/158             158/158
-##          - U10:  158/158             158/158
-##          - U6R:  158/158             158/158
-##          - U6N:  157/158             158/158
-##          - T10:  158/158             158/158
-##          - T6R:  158/158             158/158
-##          - T6N:  157/158             158/158
-##            
-##      - Movement:
-##
-##                  significance        negative
-##          - R10:  69/158              158/158
-##          - R6R:  15/158              64/158
-##          - R6N:  58/158              59/158
-##          - U10:  69/158              158/158
-##          - U6R:  11/158              64/158
-##          - U6N:  57/158              63/158
-##          - T10:  0/158               86/158
-##          - T6R:  130/158             4/158
-##          - T6N:  134/158             8/158
+data.table::fwrite(results, 
+                   file.path(".", "results", "simulation_1", "selected_pipelines.csv"))
+## In general, many pipelines did well according to our standards. The selected
+## pipelines usually involve a moving window. When looking at both MAE and RMSE, 
+## another 52 functions survive to the next round.
