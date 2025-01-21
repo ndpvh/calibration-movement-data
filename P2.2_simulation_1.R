@@ -281,9 +281,9 @@ summary_results <- lapply(filenames,
                                                  data.table = FALSE))
 
 # Create all figures
-columns <- c("mean_diff_x", 
-             "mean_diff_y", 
-             "mean_dist", 
+columns <- c("bias_diff_x", 
+             "bias_diff_y", 
+             "bias_dist", 
              "rmse_diff_x", 
              "rmse_diff_y", 
              "rmse_dist", 
@@ -291,55 +291,68 @@ columns <- c("mean_diff_x",
              "mae_diff_y", 
              "mae_dist")
 
-for(i in seq_along(results)) {
-    for(j in columns) {
-        # Bar plot
-        plt <- nameless::barplot(summary_results[[i]], j)
-        ggplot2::ggsave(plt, 
-                        filename = file.path("figures", 
-                                             "simulation_1", 
-                                             "barplot summary statistics",
-                                             paste0(stringr::str_split_i(filenames[i], 
-                                                                         pattern = ".csv", 
-                                                                         i = 1), 
-                                                    "__", 
-                                                    j, 
-                                                    ".png")), 
-                        width = 15 * 600,
-                        height = 15 * 650, 
-                        unit = "px")
+filenames <- c("movement_R10.csv")
 
-        # Histograms
-        plt <- nameless::histogram(summary_results[[i]], j)
+for(i in seq_along(filenames)) {
+    summary <- data.table::fread(file.path(".", 
+                                           "results", 
+                                           "simulation_1", 
+                                           paste0("summary_", filenames[i])),
+                                 data.table = FALSE)
+    
+    trajectory <- data.table::fread(file.path(".", 
+                                              "results", 
+                                              "simulation_1", 
+                                              paste0("trajectory_", filenames[i])),
+                                    data.table = FALSE)
+    # for(j in columns) {
+    #     # Bar plot
+    #     plt <- nameless:::barplot(summary, j)
+    #     ggplot2::ggsave(plt[["plot"]], 
+    #                     filename = file.path("figures", 
+    #                                          "simulation_1", 
+    #                                          "barplot summary statistics",
+    #                                          paste0(stringr::str_split_i(filenames[i], 
+    #                                                                      pattern = ".csv", 
+    #                                                                      i = 1), 
+    #                                                 "__", 
+    #                                                 j, 
+    #                                                 ".png")), 
+    #                     width = 15 * 600,
+    #                     height = 15 * 650, 
+    #                     unit = "px")
 
-        ggplot2::ggsave(plt, 
-                        filename = file.path("figures", 
-                                             "simulation_1", 
-                                             "histogram summary statistics",
-                                             paste0(stringr::str_split_i(filenames[i], 
-                                                                         pattern = ".csv", 
-                                                                         i = 1), 
-                                                    "__", 
-                                                    j, 
-                                                    ".png")), 
-                        width = 15 * 600,
-                        height = 15 * 650, 
-                        unit = "px")
-    }
+    #     # Histograms
+    #     plt <- nameless:::histogram(summary, j)
+
+    #     ggplot2::ggsave(plt[["plot"]], 
+    #                     filename = file.path("figures", 
+    #                                          "simulation_1", 
+    #                                          "histogram summary statistics",
+    #                                          paste0(stringr::str_split_i(filenames[i], 
+    #                                                                      pattern = ".csv", 
+    #                                                                      i = 1), 
+    #                                                 "__", 
+    #                                                 j, 
+    #                                                 ".png")), 
+    #                     width = 15 * 600,
+    #                     height = 15 * 650, 
+    #                     unit = "px")
+    # }
 
     # Get all unique preprocessing pipelines and plot the trajectories for 
     # these
-    for(j in unique(trajectory_results[[i]]$condition)[-1]) {
+    for(j in unique(trajectory$condition)[-1]) {
         # Trajectories
-        plt <- trajectory_results[[i]] %>% 
+        plt <- trajectory %>% 
             dplyr::filter(nsim == 1) %>% 
             dplyr::filter(condition %in% c("", j)) %>% 
-            nameless::trajectory()
+            nameless:::trajectory()
     
         ggplot2::ggsave(plt, 
                         filename = file.path("figures", 
                                              "simulation_1", 
-                                             "trajectory summary statistics",
+                                             "trajectory",
                                              paste0(stringr::str_split_i(filenames[i], 
                                                                          pattern = ".csv", 
                                                                          i = 1), 
