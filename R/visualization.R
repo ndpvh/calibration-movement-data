@@ -13,7 +13,7 @@ histogram <- function(x,
         dplyr::mutate(M = 1)
 
     # Get all conditions out of there
-    conditions <- unique(after$condition)
+    conditions <- unique(after$preprocessing_function)
 
     # Fix the limits on the x-axis (within bounds, of course)
     all_x <- x[, statistics]
@@ -64,7 +64,7 @@ histogram <- function(x,
         # Get plot data for the condition and the statistic of interest. Bind 
         # together for before and after
         plot_data <- after %>%
-            dplyr::filter(condition == i) %>%
+            dplyr::filter(preprocessing_function == i) %>%
             dplyr::select(contains(statistics)) %>%
             setNames("X") %>%
             dplyr::mutate(M = 2) %>%
@@ -109,8 +109,8 @@ barplot <- function(x,
 
     # Get the data of before
     before <- before %>%
-        dplyr::select(contains(statistics), condition) %>%
-        dplyr::mutate(condition = "before") %>% 
+        dplyr::select(contains(statistics), preprocessing_function) %>%
+        dplyr::mutate(preprocessing_function = "before") %>% 
         setNames(c("X", "M"))
 
     # Fix the limits on the x-axis (within bounds, of course)
@@ -153,9 +153,9 @@ barplot <- function(x,
     }
 
     # Create some plot data that will be used for the barplot
-    conditions <- c("before", unique(after$condition))
+    conditions <- c("before", unique(after$preprocessing_function))
     plot_data <- after %>% 
-        dplyr::select(contains(statistics), condition) %>% 
+        dplyr::select(contains(statistics), preprocessing_function) %>% 
         setNames(c("X", "M")) %>% 
         rbind(before) %>% 
         dplyr::group_by(M) %>% 
@@ -250,7 +250,7 @@ trajectory <- function(x) {
         # Get the original data and make them in plot data (x, y, xend, yend)
         original <- to_segments(dplyr::filter(x, preprocessed == "before"), 
                                 .vars = c("x_original", "y_original"), 
-                                .id = ids[i])            
+                                .id = ids[i])
 
         # Get filtered and unfiltered data
         other <- list(to_segments(dplyr::filter(x, preprocessed == "before"), 
@@ -262,12 +262,22 @@ trajectory <- function(x) {
 
         # Compute the standard deviations between the actual movement and the 
         # measured movement in both cases. Will be  
-        rmse <- c(compute_rmse(dplyr::filter(x, preprocessed == "before"), 
-                               .vars = c("x", "y"), 
-                               .id = ids[i]), 
-                  compute_rmse(dplyr::filter(x, preprocessed == "after"), 
-                               .vars = c("x", "y"), 
-                               .id = ids[i]))
+        RMSE <- c(x %>% 
+                      dplyr::filter(preprocessed == "before") %>% 
+                      dplyr::mutate(dist = (x - x_original)^2 + (y - y_original)^2,
+                                    dist = sqrt(dist)) %>% 
+                      dplyr::summarize(rmse = rmse(dist)) %>% 
+                      dplyr::select(rmse) %>% 
+                      unlist() %>% 
+                      as.numeric(), 
+                  x %>% 
+                      dplyr::filter(preprocessed == "after") %>% 
+                      dplyr::mutate(dist = (x - x_original)^2 + (y - y_original)^2,
+                                    dist = sqrt(dist)) %>% 
+                      dplyr::summarize(rmse = rmse(dist)) %>% 
+                      dplyr::select(rmse) %>% 
+                      unlist() %>% 
+                      as.numeric())
 
         # Compute the limits of the plot. Makes sure both plots have the same 
         # limits
@@ -315,7 +325,7 @@ trajectory <- function(x) {
                                   x = xlims[1] + 0.95 * diff(xlims), 
                                   y = ylims[1] + 0.95 * diff(ylims), 
                                   label = latex2exp::TeX(paste0("$RMSE = ", 
-                                                                rmse[j],
+                                                                RMSE[j],
                                                                 "$")), 
                                   size = 5,
                                   hjust = 1, 
