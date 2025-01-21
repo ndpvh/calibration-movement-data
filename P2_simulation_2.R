@@ -55,41 +55,20 @@ saveRDS(data_list, file.path("results", "simulation_2", "data_list.Rds"))
 #-------------------------------------------------------------------------------
 
 # Define the pipelines that worked best overall. Based on the results that are 
-# described in P3_simulation_1.R, in which we found that the following pipelines
-# worked in the majority of the cases:
-#   - Kalman filter
-#   - Kalman filter (reversed)
-#   - LOESS (2nd degree)
-#   - LOESS (2nd degree) + Kalman filter
-#   - LOESS (2nd degree) + Kalman filter (reversed)
-#   - Kalman filter + LOESS (2nd degree)
-#   - Kalman filter (reversed) + LOESS (2nd degree)
-#   - Kalman filter + LOESS (3rd degree)
-#   - Kalman filter (reversed) + LOESS (3rd degree)
-#
-# These are the pipelines we will use on simulation 2.
-kalm <- \(x) nameless::kalman_filter(x, 
-                                     assumed_variance = 0.031^2,
-                                     reverse = FALSE, 
-                                     .by = "id")
-kalm_rev <- \(x) nameless::kalman_filter(x, 
-                                         assumed_variance = 0.031^2,
-                                         reverse = TRUE, 
-                                         .by = "id")
-loess_2 <- \(x) nameless::local_regression(x, .by = "id", degree = 2)
-loess_3 <- \(x) nameless::local_regression(x, .by = "id", degree = 3)
+# described in P3_simulation_1.R, which were saved in a separate file.
+pipelines <- readRDS(file.path(".", "results", "simulation_1", "conditions.Rds"))
+idx <- data.table::fread(file.path(".", "results", "simulation_1", "selected_pipelines.csv"),
+                         data.table = FALSE)
 
-conditions <- list("kalm" = list(kalm), 
-                   "kalm-rev" = list(kalm_rev),
-                   "loess-2" = list(loess_2),
-                   "loess-2_kalm" = list(loess_2, kalm),
-                   "loess-2_kalm-rev" = list(loess_2, kalm_rev),
-                   "kalm_loess-2" = list(kalm, loess_2),
-                   "kalm-rev_loess-2" = list(kalm_rev, loess_2),
-                   "kalm_loess-3" = list(kalm, loess_3),
-                   "kalm-rev_loess-3" = list(kalm_rev, loess_3))
+# Select only those pipelines that created a reduction in MAE and RMSE
+idx <- idx %>% 
+    dplyr::filter(mae_dist & rmse_dist) %>% 
+    dplyr::select(preprocessing_function) %>% 
+    unlist() %>% 
+    as.character()
+pipelines <- pipelines[idx]
 
-saveRDS(conditions, file.path("results", "simulation_2", "conditions.Rds"))
+saveRDS(pipelines, file.path("results", "simulation_2", "conditions.Rds"))
 
 
 
@@ -116,7 +95,7 @@ for(i in seq_along(data_files)) {
     # Actually preprocess the file
     nameless::pipeline_efficiency(data_list[[data_files[i]]] %>% 
                                       dplyr::filter(nsim %in% 1:5), 
-                                  conditions, 
+                                  pipelines, 
                                   .by = "nsim",
                                   summary.by = "id",
                                   path = file.path(".", "results", "simulation_2"),
@@ -156,34 +135,6 @@ for(i in c("trajectory", "summary")) {
 ################################################################################
 # VISUALIZATION
 
-################################################################################
-# VISUALIZATION
-
-#-------------------------------------------------------------------------------
-# Per file
-#-------------------------------------------------------------------------------
-
-# Load the needed files
-filenames <- paste("data", 
-                   c("R10", "U10", "T10", "R6R", "U6R", "T6R", "R6N", "U6N", "T6N"),
-                   sep = "_") %>% 
-    paste(".csv", sep = "")
-
-trajectory_results <- lapply(filenames, 
-                             \(x) data.table::fread(file.path(".", 
-                                                              "results", 
-                                                              "simulation_2", 
-                                                              paste0("trajectory_", x)), 
-                                                    data.table = FALSE) %>% 
-                                 dplyr::rename(condition = preprocessing_function))
-summary_results <- lapply(filenames, 
-                          \(x) data.table::fread(file.path(".", 
-                                                           "results", 
-                                                           "simulation_2", 
-                                                           paste0("summary_", x)), 
-                                                 data.table = FALSE) %>% 
-                              dplyr::rename(condition = preprocessing_function))
-
 # Create all figures
 columns <- c("bias_diff_x", 
              "bias_diff_y", 
@@ -195,33 +146,53 @@ columns <- c("bias_diff_x",
              "mae_diff_y", 
              "mae_dist")
 
+filenames <- paste("data",
+                   c("R10", "U10", "T10", "R6R", "U6R", "T6R", "R6N", "U6N", "T6N"),
+                   sep = "_") %>% 
+    paste(".csv", sep = "")
+
 for(i in seq_along(filenames)) {
+    summary <- data.table::fread(file.path(".", 
+                                           "results", 
+                                           "simulation_2", 
+                                           paste0("summary_", filenames[i])),
+                                 data.table = FALSE)
+    
+    # trajectory <- data.table::fread(file.path(".", 
+    #                                           "results", 
+    #                                           "simulation_2", 
+    #                                           paste0("trajectory_", filenames[i])),
+    #                                 data.table = FALSE)
     for(j in columns) {
         # Bar plot
-        plt <- barplot(summary_results[[i]], j)
+        plt <- nameless:::barplot(summary, j)
         ggplot2::ggsave(plt[["plot"]], 
                         filename = file.path("figures", 
-                                            "simulation_2", 
-                                            "barplot summary statistics",
-                                            paste0(filenames[i],
-                                                   "_",
-                                                   j, 
-                                                   ".png")), 
+                                             "simulation_2", 
+                                             "barplot summary statistics",
+                                             paste0(stringr::str_split_i(filenames[i], 
+                                                                         pattern = ".csv", 
+                                                                         i = 1), 
+                                                    "__", 
+                                                    j, 
+                                                    ".png")), 
                         width = 15 * 600,
                         height = 15 * 650, 
                         unit = "px")
 
         # Histograms
-        plt <- histogram(summary_results[[i]], j)
+        plt <- nameless:::histogram(summary, j)
 
-        ggplot2::ggsave(plt, 
+        ggplot2::ggsave(plt[["plot"]], 
                         filename = file.path("figures", 
-                                            "simulation_2", 
-                                            "histogram summary statistics",
-                                            paste0(filenames[i],
-                                                   "_",
-                                                   j, 
-                                                   ".png")), 
+                                             "simulation_2", 
+                                             "histogram summary statistics",
+                                             paste0(stringr::str_split_i(filenames[i], 
+                                                                         pattern = ".csv", 
+                                                                         i = 1), 
+                                                    "__", 
+                                                    j, 
+                                                    ".png")), 
                         width = 15 * 600,
                         height = 15 * 650, 
                         unit = "px")
@@ -229,111 +200,25 @@ for(i in seq_along(filenames)) {
 
     # Get all unique preprocessing pipelines and plot the trajectories for 
     # these
-    for(j in unique(trajectory_results$condition)[-1]) {
-        # Trajectories
-        plt <- trajectory_results %>% 
-            dplyr::filter(nsim == 1) %>% 
-            dplyr::filter(condition %in% c("", j)) %>% 
-            trajectory()
-        ggplot2::ggsave(plt, 
-                        filename = file.path("figures", 
-                                            "simulation_2", 
-                                            "trajectory summary statistics",
-                                            paste0(filenames[i],
-                                                   "_",
-                                                   j, 
-                                                   ".png")), 
-                        width = 900 * 3, 
-                        height = 1000 * 10,
-                        unit = "px")
-    }  
+    # for(j in unique(trajectory$condition)[-1]) {
+    #     # Trajectories
+    #     plt <- trajectory %>% 
+    #         dplyr::filter(nsim == 1) %>% 
+    #         dplyr::filter(condition %in% c("", j)) %>% 
+    #         nameless:::trajectory()
+    
+    #     ggplot2::ggsave(plt, 
+    #                     filename = file.path("figures", 
+    #                                          "simulation_2", 
+    #                                          "trajectory",
+    #                                          paste0(stringr::str_split_i(filenames[i], 
+    #                                                                      pattern = ".csv", 
+    #                                                                      i = 1), 
+    #                                                 "__", 
+    #                                                 j, 
+    #                                                 ".png")), 
+    #                     width = 900 * 3, 
+    #                     height = 1000 * 10,
+    #                     unit = "px")
+    # }
 }
-
-
-
-
-
-
-#-------------------------------------------------------------------------------
-# All files together
-#-------------------------------------------------------------------------------
-
-# Load the needed files
-trajectory_results <- data.table::fread(file.path(".", 
-                                                  "results",
-                                                  "simulation_2",
-                                                  "trajectory_data.csv"),
-                                        data.table = FALSE)
-summary_results <- data.table::fread(file.path(".", 
-                                               "results",
-                                               "simulation_2",
-                                               "summary_data.csv"),
-                                     data.table = FALSE)
-
-# Create all figures
-columns <- c("mean_diff_x", 
-             "mean_diff_y", 
-             "mean_dist", 
-             "rmse_diff_x", 
-             "rmse_diff_y", 
-             "rmse_dist", 
-             "mae_diff_x", 
-             "mae_diff_y", 
-             "mae_dist")
-
-for(j in columns) {
-    # Bar plot
-    plt <- barplot(summary_results, j)
-    ggplot2::ggsave(plt[["plot"]], 
-                    filename = file.path("figures", 
-                                         "simulation_2", 
-                                         "barplot summary statistics",
-                                         paste0("data_", 
-                                                j, 
-                                                ".png")), 
-                    width = 15 * 600,
-                    height = 15 * 650, 
-                    unit = "px")
-
-    data.table::fwrite(plt[["data"]], 
-                       file.path("results", 
-                                 "simulation_2", 
-                                 paste0("data_", 
-                                        j,
-                                        "__ci.csv")))
-
-    # Histograms
-    plt <- histogram(summary_results, j)
-
-    ggplot2::ggsave(plt, 
-                    filename = file.path("figures", 
-                                         "simulation_2", 
-                                         "histogram summary statistics",
-                                         paste0("data_", 
-                                                j, 
-                                                ".png")), 
-                    width = 15 * 600,
-                    height = 15 * 650, 
-                    unit = "px")
-}
-
-# Get all unique preprocessing pipelines and plot the trajectories for 
-# these
-for(j in unique(trajectory_results$condition)[-1]) {
-    # Trajectories
-    plt <- trajectory_results %>% 
-        dplyr::filter(nsim == 1) %>% 
-        dplyr::filter(condition %in% c("", j)) %>% 
-        trajectory()
-    ggplot2::ggsave(plt, 
-                    filename = file.path("figures", 
-                                         "simulation_2", 
-                                         "trajectory summary statistics",
-                                         paste0("data_", 
-                                                j, 
-                                                ".png")), 
-                    width = 900 * 3, 
-                    height = 1000 * 10,
-                    unit = "px")
-}  
-
