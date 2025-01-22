@@ -33,7 +33,9 @@ moving_window <- function(data,
     # Check whether there is a grouping variable to account for. If not, then 
     # we just use a dummy
     if(!is.null(.by)) {
-        group <- unique(data[,.by])
+        group <- data[,.by] %>% 
+            unique() %>% 
+            as.vector()
     } else {
         group <- 1
     }
@@ -84,7 +86,7 @@ moving_window <- function(data,
             dplyr::rowwise() %>% 
             dplyr::mutate(data = individual_data[from:to,] %>% 
                                      dplyr::mutate(index = index - obs, 
-                                                   relative_time = time - time[obs]) %>% 
+                                                   relative_time = time - time[index == 0]) %>% 
                                      dplyr::arrange(time) %>% 
                                      list()) %>% 
             cbind(individual_data) %>% 
@@ -106,7 +108,7 @@ moving_window <- function(data,
         dplyr::select(-from, -to, -obs) %>% 
         dplyr::relocate(time:id, x:y) %>% 
         dplyr::arrange(time) %>% 
-        as.data.frame()    
+        as.data.frame()
 
     return(data)
 }

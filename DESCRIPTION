@@ -19,7 +19,7 @@ Imports:
     dplyr,
     magrittr,
     tidyr
-RoxygenNote: 7.3.1
+RoxygenNote: 7.3.2
 Collate:
     'utility.R'
     'plot.R'
@@ -27,10 +27,15 @@ Collate:
     'statistics.R'
     'moving_window.R'
     'bin.R'
-    'dynamic_filter.R'
+    'loess.R'
+    'kalman_filter.R'
     'load_data.R'
     'normalize_position.R'
     'polynomial_distortion.R'
+    'pipeline_efficiency.R'
+    'summary_statistics.R'
+    'compare_distribution.R'
+    'visualization.R'
 Suggests: 
     fs,
     testthat (>= 3.0.0)

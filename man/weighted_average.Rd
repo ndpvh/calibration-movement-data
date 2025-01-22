@@ -7,7 +7,8 @@
 weighted_average(
   data,
   weights = function(x) dnorm(x, mean = 0, sd = 1),
-  .by = "index"
+  .by = "index",
+  cols = NULL
 )
 }
 \arguments{
