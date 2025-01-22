@@ -1,22 +1,306 @@
 ################################################################################
-# Purpose: Analyze the preprocessed stationary data gathered on 14/10/2023,    #
-#          21/10/2023, and 22/12/2023. The main goal of this analysis is to    #
-#          inform us on ways to deal with systematic and unsystematic noise in # 
-#          our data.                                                           #
+# Purpose: Analyze the raw data gathered on 14/10/2023, 21/10/2023,            #
+#          22/12/2023, and 02/12/2024. In these experiments, we measured       #
+#          the positions of tags that were fixed in space, allowing us to      #
+#          take a closer look at the measurement error.                        #
+#                                                                              #
+#          The main goal of this analysis is to inform us on the structure of  #
+#          the error, allowing us to simulate data with a similar type of      #
+#          error as those of the real data.                                    #
+#                                                                              # 
+#          The structure of this file is as follows:                           # 
+#              Lx-y: Loading in datafiles                                      # 
+#              Lx-y: Examining bias                                            # 
+#              Lx-y: Examining variance                                        #     
+#              Lx-y: Examining sampling frequency                              #
+#                                                                              #
+#          Note that it is possible to skip the first part and continue from   #
+#          second part onwards (Bias)                                          #
 ################################################################################
-
-################################################################################
-# PRELIMINARIES
 
 devtools::load_all()
 
-# Get the data that you want to preprocess.
-data_files <- c("stationary_14-10-2023", 
-                "stationary_21-10-2023",
-                "stationary_22-12-2023")
-data_list <- lapply(data_files, 
-                    \(x) readRDS(file.path("data", "stationary", paste0(x, ".Rds"))))
-names(data_list) <- data_files
+################################################################################
+# DATAFILES
+
+# Load in the datafiles in which all results are saved. 
+data <- data.table::fread(
+    file.path("data", "raw_data", "datapoints.csv"),
+    data.table = FALSE,
+    fill = TRUE
+)
+
+# Load the experiment names and join together with the bigger datafile. This 
+# will make it easier for us to select on specific dates on which experiments 
+# were ran, as well as on different conditions for each of these experiments.
+data <- data.table::fread(
+    file.path("data", "raw_data", "experiments.csv"),
+    data.table = FALSE
+) %>% 
+    dplyr::rename(experiment_id = id) %>% 
+    dplyr::select(experiment_id, name) %>% 
+    dplyr::full_join(data, by = "experiment_id") %>% 
+    dplyr::select(-experiment_id) %>% 
+    dplyr::rename(experiment = name)
+
+# Define the datasets that contain the measurements of the fixed locations on 
+# the different days. Add those all in a list with the date as its identifier 
+# and save the list in a separate file. This is done for several reasons:
+#   - Will make it easier to perform the analyses for the separate days
+#   - Makes it possible for people who look at the code to reproduce our results
+#     without them having access to the complete datafile (and without having to 
+#     interpret the names that we provided to the experiments directly).
+experiments <- list(
+    "14-10-2023" = paste("stationary", 1:6), 
+    "21-10-2023" = paste("STATIONARY", 1:2),
+    "22-12-2023" = paste("stationarity", 1:4, "- 22-12-2023"),
+    "16-11-2024" = paste("rec e", 1:9)
+)
+
+lapply(
+    names(experiments),
+    \(x) data[data$experiment %in% experiments[[x]], ]
+) %>% 
+    `names<-` (names(experiments)) %>% 
+    saveRDS(file.path("data", "study 1", "data_list.Rds"))
+
+
+
+
+
+################################################################################
+# SYSTEMATIC ERROR
+
+data_list <- readRDS(file.path("data", "study 1", "data_list.Rds"))
+
+# Link the real positions of the tags to the data, allowing us to create a 
+# metric of the bias around tags in a given position. This is done in a few 
+# steps by creating a grid of the required size and finding out to which of the 
+# grids intersections each tag can be assigned. A function is created for this.
+add_locations <- function(data, 
+                          size){
+    # Create X and Y series for the given size and given space inbetween each
+    # point
+    XY <- data.frame(
+        X = seq(0, size[1], 1), 
+        Y = seq(0, size[2], 1)
+    ) %>% 
+        dplyr::mutate(tag = dplyr::row_number())
+
+    # Assign rows and columns to the tag_id's in the data. This is done through
+    # a standardization and then a guess of where the tag might be.
+    assign_row <- function(x, n_rows){
+        (x - mean(x)) %>% 
+            `/` (max(x) - min(x)) %>%
+            `*` (n_rows) %>% 
+            round() %>% 
+            return()
+    }
+
+    data <- data %>% 
+        dplyr::mutate(
+            X = assign_row(x, size[1]),
+            Y = assign_row(y, size[2])
+        ) %>% 
+        dplyr::select(-tag_id) %>% 
+        dplyr::full_join(
+            XY,
+            by = c("X", "Y")
+        ) %>% 
+        dplyr::mutate(
+            X = X + mean(x),
+            Y = Y + mean(y)
+        )
+
+    return(data)    
+}
+
+sizes <- list(
+    "14-10-2023" = c(10, 8),
+    "21-10-2023" = c(10, 8),
+    "22-12-2023" = c(10, 7),
+    "16-11-2024" = c(7, 10)
+)
+
+for(i in names(data_list)) {
+    data_list[[i]] <- add_locations(
+        data_list[[i]],
+        sizes[[i]]
+    )
+}
+
+# NEXT STEPS:
+#   - Examine how to get rid of unwanted parts of data in list
+#   - Examine accuracy of grouping tag data together
+#   - Examine how to place the grid in the middle of the plot
+#   - Examine distances per row/tag
+
+
+
+
+
+
+
+
+# Create a function that prepares the data for the polynomial.
+polynomial_data <- function(data, 
+                            n = 1, 
+                            simple = TRUE) {
+    # Extract the dependent variable and make it ready for the estimation
+    Y <- data %>% 
+        dplyr::select(X, Y) %>% 
+        as.matrix()
+
+    # Create the independent variables of the polynomial. Here, we dispatch on 
+    # the kind of polynomial you want to create, as there are two options to 
+    # move forward.
+    #
+    # When `simple == TRUE`, we will create a simple polynomial in which the 
+    # dimensions `x` and `y` are always treated together, so that: 
+    #
+    #   [X, Y] = \sum_{j = 0} B_j [x, y]^j
+    #
+    # Interactions between the dimensions are then captured by the off-diagonal 
+    # elements in the 2 x 2 matrix B_j, which is unique for each degree j.
+    #
+    # Another approach generalizes this polynomial and includes explicit 
+    # interaction effects for each degree, so that: 
+    #
+    #   [X, Y] = \sum_{j = 0, i = 0, i + j \leq n} [\beta_1, \beta_2]_j x^i y^j
+    #
+    # where you use the parameter vector [\beta_1, \beta_2] to scale the scalar
+    # value of the polynomial. This is closer to an actual polynomial approach, 
+    # but comes with a larger number of parameters to estimate
+    if(simple) {
+        # Just select the data `x` and `y` and take them both to the desired power
+        X <- data %>% 
+            dplyr::select(x, y)
+        X <- lapply(seq_len(n), 
+                    \(i) X^i)
+        X <- append(list(as.data.frame(rep(1, nrow(data)))), 
+                    X)
+    } else {
+        # Here, things are somewhat more complicated. First, we make the 
+        # combinations for taking something to a given power and delete those 
+        # combinations that would lead to a degree greater than n. Then, we 
+        # loop over these combinations and take each of the independent variables
+        # to that power.
+        degrees <- cbind(x = rep(0:n, each = n + 1), 
+                         y = rep(0:n, times = n + 1)) %>% 
+            as.data.frame() %>% 
+            dplyr::mutate(degree = x + y) %>% 
+            dplyr::filter(degree <= n) %>% 
+            dplyr::select(-degree)
+
+        X <- lapply(seq_len(nrow(degrees)), 
+                    \(i) data$x^degrees$x[i] * data$y^degrees$y[i])
+    }    
+
+    X <- do.call("cbind", X) %>% 
+        as.matrix()
+
+    return(list("Y" = Y, "X" = X))
+}
+
+# Create a function that will estimate a formula for a polynomial of the n^th 
+# degree. Analytic solution to the least-squares used for this.
+polynomial <- function(data, 
+                       n = 1,
+                       simple = TRUE){
+    # Prepare the data for analyses (i.e., transform to necessary matrices)
+    data <- polynomial_data(data, n = n, simple = simple)
+    X <- data[["X"]]
+    Y <- data[["Y"]]
+
+    # Time to do the actual analysis. Use the analytic solution to the least-
+    # squares formula
+    B <- solve(t(X) %*% X) %*% t(X) %*% Y
+    return(B)
+}
+
+# Standardize the measured and supposed real positions of the tags and do the 
+# polynomial analysis. 
+#
+# Importantly, the kind of standardization that is performed is not the 
+# standard way of doing this. Rather, we want to transform all measured positions 
+# that fall within the measurement space (i.e., the space bounded by the 
+# anchors) to fall within -1 and 1. This will allow us to more readily 
+# translate the calibration on one day to the measurements on another, as 
+# you are not dependent on the actual measurements for the standardization
+# (in contrast to the scaled equivalent of the Z-score). Importantly, the 
+# `minmax_standardize` function does this transformation, as defined in the 
+# utility functions.# 
+# Unfortunately, we don't have the anchors' positions, so we will assume that 
+# they lie at the sides of the "real positions" grid. In reality, this will 
+# probably be off by a few tens of centimeters, but we will have to do 
+# another, more precisely done calibration to combat the issues that this 
+# brings.
+results <- lapply(data_files, 
+                  \(i) data_list[[i]] %>% 
+                      dplyr::mutate(x = normalize_position(x, 
+                                                           min_x = min(anchor_list[[i]]$x), 
+                                                           max_x = max(anchor_list[[i]]$x)), 
+                                    y = normalize_position(y, 
+                                                           min_x = min(anchor_list[[i]]$y), 
+                                                           max_x = max(anchor_list[[i]]$y)), 
+                                    X = normalize_position(X, 
+                                                           min_x = min(anchor_list[[i]]$x), 
+                                                           max_x = max(anchor_list[[i]]$x)), 
+                                    Y = normalize_position(Y, 
+                                                           min_x = min(anchor_list[[i]]$y), 
+                                                           max_x = max(anchor_list[[i]]$y))) %>% 
+                      polynomial(n = 10, simple = FALSE))
+names(results) <- data_files
+
+saveRDS(results, 
+        file.path("results", "stationary", "polynomial_params.Rds"))
+
+# Let's check whether this works
+filtered <- lapply(data_files, 
+                   \(i) data_list[[i]] %>% 
+                       dplyr::mutate(x = normalize_position(x, 
+                                                            min_x = min(anchor_list[[i]]$x), 
+                                                            max_x = max(anchor_list[[i]]$x)), 
+                                     y = normalize_position(y, 
+                                                            min_x = min(anchor_list[[i]]$y), 
+                                                            max_x = max(anchor_list[[i]]$y))) %>% 
+                       polynomial_distortion(results[[i]], n = 10, simple = FALSE) %>% 
+                       dplyr::mutate(x = denormalize_position(x, 
+                                                              min_x = min(anchor_list[[i]]$x), 
+                                                              max_x = max(anchor_list[[i]]$x)), 
+                                     y = denormalize_position(y, 
+                                                              min_x = min(anchor_list[[i]]$y), 
+                                                              max_x = max(anchor_list[[i]]$y))))
+names(filtered) <- data_files
+
+# Create plots
+tmp <- append(data_list, filtered)
+tmp_names <- names(tmp)
+plots <- lapply(seq_along(tmp), 
+                \(x) plot(tmp[[x]], per_iteration = FALSE) + 
+                    ggplot2::labs(title = tmp_names[x]))
+plots <- ggpubr::ggarrange(plotlist = plots, 
+                           nrow = 2, 
+                           ncol = length(data_files))
+
+ggplot2::ggsave(file.path("figures", "stationary", "systematic_error_filtered.jpg"), 
+                plots,                
+                width = 5000, 
+                height = 2200, 
+                unit = "px")
+
+# Interpretation of the results: 
+#   - For all datasets, distortion seems to disappear somewhat, although its 
+#     success varies
+#   - For the 22-12-2023 data, the distortion seems to disappear the least
+
+
+
+
+
+
+
+
 
 # Also read in the data on where the anchors were located for these data.
 files <- c("anchor_position_14-10-2023", 
@@ -599,173 +883,6 @@ ggplot2::ggsave(file.path("figures", "stationary", "unsystematic_error_distance.
 #     the 22-12-2023 data
 #       - This only seems to be the case slightly, and primarily in the 
 #         y-direction
-
-
-
-
-
-################################################################################
-# SYSTEMATIC ERROR
-
-# PURPOSE: Here, we estimate a function to filter out systematic distortions in 
-#          the data. We use several different functions to quantify the 
-#          relationship, namely (a) a polynomial and (b) a hyperboloid. For each
-#          of these, we use the supposed positions X, Y as the dependent 
-#          variables and the measured positions x, y as the independent variables.
-#          That way, we can use the parameters we get out of the equations 
-#          immediately.
-
-# Create a function that prepares the data for the polynomial.
-polynomial_data <- function(data, 
-                            n = 1, 
-                            simple = TRUE) {
-    # Extract the dependent variable and make it ready for the estimation
-    Y <- data %>% 
-        dplyr::select(X, Y) %>% 
-        as.matrix()
-
-    # Create the independent variables of the polynomial. Here, we dispatch on 
-    # the kind of polynomial you want to create, as there are two options to 
-    # move forward.
-    #
-    # When `simple == TRUE`, we will create a simple polynomial in which the 
-    # dimensions `x` and `y` are always treated together, so that: 
-    #
-    #   [X, Y] = \sum_{j = 0} B_j [x, y]^j
-    #
-    # Interactions between the dimensions are then captured by the off-diagonal 
-    # elements in the 2 x 2 matrix B_j, which is unique for each degree j.
-    #
-    # Another approach generalizes this polynomial and includes explicit 
-    # interaction effects for each degree, so that: 
-    #
-    #   [X, Y] = \sum_{j = 0, i = 0, i + j \leq n} [\beta_1, \beta_2]_j x^i y^j
-    #
-    # where you use the parameter vector [\beta_1, \beta_2] to scale the scalar
-    # value of the polynomial. This is closer to an actual polynomial approach, 
-    # but comes with a larger number of parameters to estimate
-    if(simple) {
-        # Just select the data `x` and `y` and take them both to the desired power
-        X <- data %>% 
-            dplyr::select(x, y)
-        X <- lapply(seq_len(n), 
-                    \(i) X^i)
-        X <- append(list(as.data.frame(rep(1, nrow(data)))), 
-                    X)
-    } else {
-        # Here, things are somewhat more complicated. First, we make the 
-        # combinations for taking something to a given power and delete those 
-        # combinations that would lead to a degree greater than n. Then, we 
-        # loop over these combinations and take each of the independent variables
-        # to that power.
-        degrees <- cbind(x = rep(0:n, each = n + 1), 
-                         y = rep(0:n, times = n + 1)) %>% 
-            as.data.frame() %>% 
-            dplyr::mutate(degree = x + y) %>% 
-            dplyr::filter(degree <= n) %>% 
-            dplyr::select(-degree)
-
-        X <- lapply(seq_len(nrow(degrees)), 
-                    \(i) data$x^degrees$x[i] * data$y^degrees$y[i])
-    }    
-
-    X <- do.call("cbind", X) %>% 
-        as.matrix()
-
-    return(list("Y" = Y, "X" = X))
-}
-
-# Create a function that will estimate a formula for a polynomial of the n^th 
-# degree. Analytic solution to the least-squares used for this.
-polynomial <- function(data, 
-                       n = 1,
-                       simple = TRUE){
-    # Prepare the data for analyses (i.e., transform to necessary matrices)
-    data <- polynomial_data(data, n = n, simple = simple)
-    X <- data[["X"]]
-    Y <- data[["Y"]]
-
-    # Time to do the actual analysis. Use the analytic solution to the least-
-    # squares formula
-    B <- solve(t(X) %*% X) %*% t(X) %*% Y
-    return(B)
-}
-
-# Standardize the measured and supposed real positions of the tags and do the 
-# polynomial analysis. 
-#
-# Importantly, the kind of standardization that is performed is not the 
-# standard way of doing this. Rather, we want to transform all measured positions 
-# that fall within the measurement space (i.e., the space bounded by the 
-# anchors) to fall within -1 and 1. This will allow us to more readily 
-# translate the calibration on one day to the measurements on another, as 
-# you are not dependent on the actual measurements for the standardization
-# (in contrast to the scaled equivalent of the Z-score). Importantly, the 
-# `minmax_standardize` function does this transformation, as defined in the 
-# utility functions.# 
-# Unfortunately, we don't have the anchors' positions, so we will assume that 
-# they lie at the sides of the "real positions" grid. In reality, this will 
-# probably be off by a few tens of centimeters, but we will have to do 
-# another, more precisely done calibration to combat the issues that this 
-# brings.
-results <- lapply(data_files, 
-                  \(i) data_list[[i]] %>% 
-                      dplyr::mutate(x = normalize_position(x, 
-                                                           min_x = min(anchor_list[[i]]$x), 
-                                                           max_x = max(anchor_list[[i]]$x)), 
-                                    y = normalize_position(y, 
-                                                           min_x = min(anchor_list[[i]]$y), 
-                                                           max_x = max(anchor_list[[i]]$y)), 
-                                    X = normalize_position(X, 
-                                                           min_x = min(anchor_list[[i]]$x), 
-                                                           max_x = max(anchor_list[[i]]$x)), 
-                                    Y = normalize_position(Y, 
-                                                           min_x = min(anchor_list[[i]]$y), 
-                                                           max_x = max(anchor_list[[i]]$y))) %>% 
-                      polynomial(n = 10, simple = FALSE))
-names(results) <- data_files
-
-saveRDS(results, 
-        file.path("results", "stationary", "polynomial_params.Rds"))
-
-# Let's check whether this works
-filtered <- lapply(data_files, 
-                   \(i) data_list[[i]] %>% 
-                       dplyr::mutate(x = normalize_position(x, 
-                                                            min_x = min(anchor_list[[i]]$x), 
-                                                            max_x = max(anchor_list[[i]]$x)), 
-                                     y = normalize_position(y, 
-                                                            min_x = min(anchor_list[[i]]$y), 
-                                                            max_x = max(anchor_list[[i]]$y))) %>% 
-                       polynomial_distortion(results[[i]], n = 10, simple = FALSE) %>% 
-                       dplyr::mutate(x = denormalize_position(x, 
-                                                              min_x = min(anchor_list[[i]]$x), 
-                                                              max_x = max(anchor_list[[i]]$x)), 
-                                     y = denormalize_position(y, 
-                                                              min_x = min(anchor_list[[i]]$y), 
-                                                              max_x = max(anchor_list[[i]]$y))))
-names(filtered) <- data_files
-
-# Create plots
-tmp <- append(data_list, filtered)
-tmp_names <- names(tmp)
-plots <- lapply(seq_along(tmp), 
-                \(x) plot(tmp[[x]], per_iteration = FALSE) + 
-                    ggplot2::labs(title = tmp_names[x]))
-plots <- ggpubr::ggarrange(plotlist = plots, 
-                           nrow = 2, 
-                           ncol = length(data_files))
-
-ggplot2::ggsave(file.path("figures", "stationary", "systematic_error_filtered.jpg"), 
-                plots,                
-                width = 5000, 
-                height = 2200, 
-                unit = "px")
-
-# Interpretation of the results: 
-#   - For all datasets, distortion seems to disappear somewhat, although its 
-#     success varies
-#   - For the 22-12-2023 data, the distortion seems to disappear the least
 
 
 
