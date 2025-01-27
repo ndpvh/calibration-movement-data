@@ -58,15 +58,27 @@ experiments <- list(
     "22-12-2023" = paste("stationarity", 1:4, "- 22-12-2023"),
     "16-11-2024" = paste("rec e", 1:9)
 )
+anchors <- list(
+    "14-10-2023" = readRDS(file.path("data", "anchor_position_14-10-2023.Rds")),
+    "21-10-2023" = readRDS(file.path("data", "anchor_position_21-10-2023.Rds")),
+    "22-12-2023" = readRDS(file.path("data", "anchor_position_22-12-2023.Rds")),
+    "16-11-2024" = readRDS(file.path("data", "anchor_position_16-11-2024.Rds"))
+)
 
 data_list <- lapply(
     names(experiments),
-    function(x) {
-        idx <- data$experiment %in% experiments[[x]]
+    function(name) {
+        idx <- data$experiment %in% experiments[[name]]
         idy <- !is.na(data$x) & !is.na(data$y)
 
         data[idx & idy, ] %>% 
-            dplyr::mutate(day = names(experiments)[x]) %>% 
+            dplyr::mutate(
+                day = names(experiments)[name],
+                anchor_xmin = min(anchors[[name]][, 2]),
+                anchor_xmax = max(anchors[[name]][, 2]),
+                anchor_ymin = min(anchors[[name]][, 3]),
+                anchor_ymax = max(anchors[[name]][, 3]),
+            ) %>% 
             return()
     }
 ) %>% 
@@ -74,7 +86,7 @@ data_list <- lapply(
     
 data_list[[3]] <- data_list[[3]][data_list[[3]]$x < 13.5, ]
     
- saveRDS(
+saveRDS(
     data_list,
     file.path("data", "study 1", "data_list.Rds")
 )
@@ -85,6 +97,8 @@ data_list[[3]] <- data_list[[3]][data_list[[3]]$x < 13.5, ]
 
 ################################################################################
 # SYSTEMATIC ERROR
+
+# Adding real positions ########################################################
 
 data_list <- readRDS(file.path("data", "study 1", "data_list.Rds"))
 
@@ -155,6 +169,9 @@ for(i in names(data_list)) {
         sizes[[i]]
     )
 }
+
+
+# Visualize error ##############################################################
 
 # Now that this is all done, we can visualize how far off the measurements are
 # of the real positions. First step: Doing this on average. 
@@ -280,7 +297,29 @@ ggplot2::ggsave(
 )
 
 
+# Polynomial ###################################################################
 
+# Now as to how to handle this. Bind all datasets together, normalize all data 
+# so that they fall between -1 and 1 depending on the locations of the anchors, 
+# and then fit a 10th degree multilvel polynomial on the result. 
+#
+# The fixed effects of this polynomial will be taken as the parameters of the 
+# model.
+all_data <- do.call(
+    "rbind",
+    data_list
+) %>% 
+    dplyr::mutate(
+        x = 2 * (x - anchor_xmin) / (anchor_xmax - anchor_xmin) - 1,
+        y = 2 * (y - anchor_ymin) / (anchor_ymax - anchor_ymin) - 1,
+        X = 2 * (X - anchor_xmin) / (anchor_xmax - anchor_xmin) - 1,
+        Y = 2 * (Y - anchor_ymin) / (anchor_ymax - anchor_ymin) - 1,
+    )
+
+lme4::lmer(
+    data = all_data,
+    X ~ x + I(x^2) + I(x^3) + I(x^4) + I(x^5) + (1 + x + I(x^2) + I(x^3) + I(x^4) + I(x^5) | day)
+)
 
 # NEXT STEPS:
 #   - Examine distances per row/tag
