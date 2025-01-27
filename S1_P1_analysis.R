@@ -73,7 +73,7 @@ data_list <- lapply(
 
         data[idx & idy, ] %>% 
             dplyr::mutate(
-                day = names(experiments)[name],
+                day = name,
                 anchor_xmin = min(anchors[[name]][, 2]),
                 anchor_xmax = max(anchors[[name]][, 2]),
                 anchor_ymin = min(anchors[[name]][, 3]),
