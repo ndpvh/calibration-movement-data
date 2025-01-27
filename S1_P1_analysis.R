@@ -65,7 +65,9 @@ data_list <- lapply(
         idx <- data$experiment %in% experiments[[x]]
         idy <- !is.na(data$x) & !is.na(data$y)
 
-        return(data[idx & idy, ])
+        data[idx & idy, ] %>% 
+            dplyr::mutate(day = names(experiments)[x]) %>% 
+            return()
     }
 ) %>% 
     `names<-` (names(experiments))
@@ -153,6 +155,132 @@ for(i in names(data_list)) {
         sizes[[i]]
     )
 }
+
+# Now that this is all done, we can visualize how far off the measurements are
+# of the real positions. First step: Doing this on average. 
+dist <- lapply(
+    seq_along(data_list),
+    \(i) data_list[[i]] %>% 
+        dplyr::mutate(dist = sqrt((x - X)^2 + (y - Y)^2)) %>% 
+        dplyr::summarize(
+            study = names(data_list)[i],
+            mean = mean(dist),
+            sd = sd(dist),
+            q025 = quantile(dist, probs = c(0.025)),
+            q975 = quantile(dist, probs = c(0.975))
+        )
+)
+dist <- do.call("rbind", dist)
+View(dist)
+
+# Now do this based on the distance from the center. In the initial plots, one 
+# could see that the measurements were somewhat pushed to the center.
+dist <- lapply(
+    seq_along(data_list),
+    \(i) data_list[[i]] %>% 
+        dplyr::mutate(
+            dist = sqrt((x - X)^2 + (y - Y)^2),
+            x_group = X - mean(x),
+            y_group = Y - mean(y)
+        ) %>% 
+        dplyr::group_by(tag) %>% 
+        dplyr::summarize(
+            study = names(data_list)[i],
+            mean = mean(dist),
+            sd = sd(dist),
+            q025 = quantile(dist, probs = c(0.025)),
+            q975 = quantile(dist, probs = c(0.975)),
+            x_group = x_group[1],
+            y_group = y_group[1]            
+        )
+)
+dist <- do.call("rbind", dist)
+View(dist)
+
+# Visualize this last step.
+bias_plot <- function(data, 
+                      title) {
+    # Get distances from the mean inside of the data
+    data <- data %>% 
+        dplyr::mutate(
+            x_group = X - mean(x),
+            y_group = Y - mean(y)
+        )
+
+    # Make a plot for x and y, summarizing over the other dimension.
+    plots <- lapply(
+        list(
+            c("x", "x_group", "X", title, ""), 
+            c("y", "y_group", "Y", "", "Position")
+        ),
+        function(x) {
+            plot_data <- data[, x[1:3]] %>% 
+                setNames(c("X", "M", "actual"))
+
+            plt <- ggplot2::ggplot(plot_data, 
+                                   ggplot2::aes(x = X, 
+                                                color = factor(M), 
+                                                fill = factor(M))) +
+                ggplot2::geom_density(alpha = 0.5) +
+                ggplot2::geom_vline(ggplot2::aes(xintercept = actual,
+                                                 color = factor(M)),
+                                    linewidth = 0.5) +
+                ggplot2::labs(x = x[5],
+                              y = "Density",
+                              title = x[4]) +
+                ggplot2::theme_minimal() +
+                ggplot2::theme(plot.title = ggplot2::element_text(size = 40,
+                                                                  hjust = 0.5),
+                               axis.title = ggplot2::element_text(size = 30),
+                               axis.text = ggplot2::element_text(size = 20), 
+                               panel.background = ggplot2::element_rect(fill = NA, 
+                                                                        linewidth = 1.5),
+                               legend.position = "none")
+            
+            return(plt)
+        }
+    )
+
+    ggpubr::ggarrange(
+        plotlist = plots, 
+        ncol = 1
+    ) %>% 
+        return()
+}
+
+plots <- lapply(
+    seq_along(data_list), 
+    \(i) bias_plot(
+        data_list[[i]],
+        names(data_list)[i]
+    )
+)
+plots <- append(
+    list(
+        ggpubr::ggarrange(
+            nameless::name_plot("X", size = 17),
+            nameless::name_plot("Y", size = 17),
+            ncol = 1
+        )
+    ),
+    plots
+)
+
+plt <- ggpubr::ggarrange(
+    plotlist = plots,
+    nrow = 1,
+    widths = c(0.1, rep(0.2, 4))
+)
+ggplot2::ggsave(
+    file.path("figures", "study 1", "systematic error.png"),
+    plt,
+    width = 1500 * 4,
+    height = 750 * 4,
+    units = "px"
+)
+
+
+
 
 # NEXT STEPS:
 #   - Examine distances per row/tag
