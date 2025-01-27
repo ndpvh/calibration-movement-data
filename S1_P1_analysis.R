@@ -50,19 +50,32 @@ data <- data.table::fread(
 #   - Makes it possible for people who look at the code to reproduce our results
 #     without them having access to the complete datafile (and without having to 
 #     interpret the names that we provided to the experiments directly).
+#   - For some datasets, some additional processing is necessary because of tags 
+#     that were emitting a signal while not lying on the grid.
 experiments <- list(
-    "14-10-2023" = paste("stationary", 1:6), 
+    "14-10-2023" = paste("stationary", c(2:3, 5:6)),
     "21-10-2023" = paste("STATIONARY", 1:2),
     "22-12-2023" = paste("stationarity", 1:4, "- 22-12-2023"),
     "16-11-2024" = paste("rec e", 1:9)
 )
 
-lapply(
+data_list <- lapply(
     names(experiments),
-    \(x) data[data$experiment %in% experiments[[x]], ]
+    function(x) {
+        idx <- data$experiment %in% experiments[[x]]
+        idy <- !is.na(data$x) & !is.na(data$y)
+
+        return(data[idx & idy, ])
+    }
 ) %>% 
-    `names<-` (names(experiments)) %>% 
-    saveRDS(file.path("data", "study 1", "data_list.Rds"))
+    `names<-` (names(experiments))
+    
+data_list[[3]] <- data_list[[3]][data_list[[3]]$x < 13.5, ]
+    
+ saveRDS(
+    data_list,
+    file.path("data", "study 1", "data_list.Rds")
+)
 
 
 
@@ -82,15 +95,26 @@ add_locations <- function(data,
     # Create X and Y series for the given size and given space inbetween each
     # point
     XY <- data.frame(
-        X = seq(0, size[1], 1), 
-        Y = seq(0, size[2], 1)
+        X = rep(
+            seq(0, size[1], 1), 
+            each = size[2] + 1
+        ),
+        Y = rep(
+            seq(0, size[2], 1),
+            times = size[1] + 1
+        )
     ) %>% 
         dplyr::mutate(tag = dplyr::row_number())
 
     # Assign rows and columns to the tag_id's in the data. This is done through
-    # a standardization and then a guess of where the tag might be.
+    # a standardization and then a guess of where the tag might be. Importantly, 
+    # we center the "real" positions on the measured positions.
+    #
+    # Note that the filter for NA values is imposed to account for when not all 
+    # positions of the grid (XY) have been measured, as is the case in the 
+    # experiment of the 21-10-2023.
     assign_row <- function(x, n_rows){
-        (x - mean(x)) %>% 
+        (x - min(x)) %>% 
             `/` (max(x) - min(x)) %>%
             `*` (n_rows) %>% 
             round() %>% 
@@ -107,9 +131,10 @@ add_locations <- function(data,
             XY,
             by = c("X", "Y")
         ) %>% 
+        dplyr::filter(!is.na(x) & !is.na(y)) %>% 
         dplyr::mutate(
-            X = X + mean(x),
-            Y = Y + mean(y)
+            X = X - mean(X) + mean(x),
+            Y = Y - mean(Y) + mean(y)
         )
 
     return(data)    
@@ -130,10 +155,8 @@ for(i in names(data_list)) {
 }
 
 # NEXT STEPS:
-#   - Examine how to get rid of unwanted parts of data in list
-#   - Examine accuracy of grouping tag data together
-#   - Examine how to place the grid in the middle of the plot
 #   - Examine distances per row/tag
+#   - Analysis for VAR and polynomials: Possible to do multilevel across datasets?
 
 
 
