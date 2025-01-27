@@ -1,3 +1,26 @@
+#' Create a pane with a chosen title in it
+#' 
+#' @param x Title to be plotted in an empty plot.
+#' @param ... Additional arguments for \code{annotate}.
+#' 
+#' @return Ggplot object
+#' 
+#' @export 
+name_plot <- function(x, ...) {
+    plt <- ggplot2::ggplot() +
+        ggplot2::annotate(
+            "text",
+            label = x, 
+            x = 0, 
+            y = 0,
+            ...
+        ) +
+        ggplot2::theme_void()
+
+    return(plt)
+}
+
+
 # Create a function that takes in a dataframe and creates the plots of interest
 histogram <- function(x, 
                       statistics) {
