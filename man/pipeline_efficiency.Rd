@@ -9,7 +9,7 @@ pipeline_efficiency(
   fx,
   .by = NULL,
   summary = list(bias = bias, rmse = rmse, mae = mae),
-  .vars = c("X", "Y", "Dist", "x", "y", "dist"),
+  .vars = c("diff_x", "diff_y", "dist"),
   summary.by = "id",
   path = file.path(".", "results"),
   filename = "",

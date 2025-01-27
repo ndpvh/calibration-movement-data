@@ -4,12 +4,10 @@
 \alias{rmse}
 \title{Compute RMSE}
 \usage{
-rmse(x, y)
+rmse(x)
 }
 \arguments{
-\item{x}{Numeric vector of values to be compared to \code{y}.}
-
-\item{y}{Numeric vector of values to be compared to \code{x}.}
+\item{x}{Numeric vector of values to for which to compute the statistic.}
 }
 \value{
 Numeric denoting the RMSE of the difference between the two vectors

@@ -4,12 +4,10 @@
 \alias{bias}
 \title{Compute Bias}
 \usage{
-bias(x, y)
+bias(x)
 }
 \arguments{
-\item{x}{Numeric vector of values to be compared to \code{y}.}
-
-\item{y}{Numeric vector of values to be compared to \code{x}.}
+\item{x}{Numeric vector of values to for which to compute the statistic.}
 }
 \value{
 Numeric denoting the mean difference between the two vectors
