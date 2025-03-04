@@ -301,7 +301,7 @@ ggplot2::ggsave(
 
 # Now as to how to handle this. Bind all datasets together, normalize all data 
 # so that they fall between -1 and 1 depending on the locations of the anchors, 
-# and then fit a 10th degree multilvel polynomial on the result. 
+# and then fit a 4th degree multilvel polynomial on the result. 
 #
 # The fixed effects of this polynomial will be taken as the parameters of the 
 # model.
@@ -316,200 +316,411 @@ all_data <- do.call(
         Y = 2 * (Y - anchor_ymin) / (anchor_ymax - anchor_ymin) - 1,
     )
 
-lme4::lmer(
-    data = all_data,
-    X ~ x + I(x^2) + I(x^3) + I(x^4) + I(x^5) + (1 + x + I(x^2) + I(x^3) + I(x^4) + I(x^5) | day)
-)
+# Create a function that will take in the data and compute the parameters of 
+# interest through least-squares
+polynomial <- function(x) {
+    # Create the Y and X variables to be used in the polynomial computation
+    Y <- cbind(x$X, x$Y)
+    X <- cbind(
+        x$x, 
+        x$x^2,
+        x$x^3,
+        x$x^4,
+        x$y, 
+        x$y^2,
+        x$y^3,
+        x$y^4
+    )
 
-# NEXT STEPS:
-#   - Examine distances per row/tag
-#   - Analysis for VAR and polynomials: Possible to do multilevel across datasets?
-
-
-
-
-
-
-
-
-# Create a function that prepares the data for the polynomial.
-polynomial_data <- function(data, 
-                            n = 1, 
-                            simple = TRUE) {
-    # Extract the dependent variable and make it ready for the estimation
-    Y <- data %>% 
-        dplyr::select(X, Y) %>% 
-        as.matrix()
-
-    # Create the independent variables of the polynomial. Here, we dispatch on 
-    # the kind of polynomial you want to create, as there are two options to 
-    # move forward.
-    #
-    # When `simple == TRUE`, we will create a simple polynomial in which the 
-    # dimensions `x` and `y` are always treated together, so that: 
-    #
-    #   [X, Y] = \sum_{j = 0} B_j [x, y]^j
-    #
-    # Interactions between the dimensions are then captured by the off-diagonal 
-    # elements in the 2 x 2 matrix B_j, which is unique for each degree j.
-    #
-    # Another approach generalizes this polynomial and includes explicit 
-    # interaction effects for each degree, so that: 
-    #
-    #   [X, Y] = \sum_{j = 0, i = 0, i + j \leq n} [\beta_1, \beta_2]_j x^i y^j
-    #
-    # where you use the parameter vector [\beta_1, \beta_2] to scale the scalar
-    # value of the polynomial. This is closer to an actual polynomial approach, 
-    # but comes with a larger number of parameters to estimate
-    if(simple) {
-        # Just select the data `x` and `y` and take them both to the desired power
-        X <- data %>% 
-            dplyr::select(x, y)
-        X <- lapply(seq_len(n), 
-                    \(i) X^i)
-        X <- append(list(as.data.frame(rep(1, nrow(data)))), 
-                    X)
-    } else {
-        # Here, things are somewhat more complicated. First, we make the 
-        # combinations for taking something to a given power and delete those 
-        # combinations that would lead to a degree greater than n. Then, we 
-        # loop over these combinations and take each of the independent variables
-        # to that power.
-        degrees <- cbind(x = rep(0:n, each = n + 1), 
-                         y = rep(0:n, times = n + 1)) %>% 
-            as.data.frame() %>% 
-            dplyr::mutate(degree = x + y) %>% 
-            dplyr::filter(degree <= n) %>% 
-            dplyr::select(-degree)
-
-        X <- lapply(seq_len(nrow(degrees)), 
-                    \(i) data$x^degrees$x[i] * data$y^degrees$y[i])
-    }    
-
-    X <- do.call("cbind", X) %>% 
-        as.matrix()
-
-    return(list("Y" = Y, "X" = X))
-}
-
-# Create a function that will estimate a formula for a polynomial of the n^th 
-# degree. Analytic solution to the least-squares used for this.
-polynomial <- function(data, 
-                       n = 1,
-                       simple = TRUE){
-    # Prepare the data for analyses (i.e., transform to necessary matrices)
-    data <- polynomial_data(data, n = n, simple = simple)
-    X <- data[["X"]]
-    Y <- data[["Y"]]
-
-    # Time to do the actual analysis. Use the analytic solution to the least-
-    # squares formula
-    B <- solve(t(X) %*% X) %*% t(X) %*% Y
+    # Compute the parameters through the analytic solution of the least-squares
+    B <- solve(t(X) %*% X) %*% (t(X) %*% Y)
     return(B)
 }
 
-# Standardize the measured and supposed real positions of the tags and do the 
-# polynomial analysis. 
-#
-# Importantly, the kind of standardization that is performed is not the 
-# standard way of doing this. Rather, we want to transform all measured positions 
-# that fall within the measurement space (i.e., the space bounded by the 
-# anchors) to fall within -1 and 1. This will allow us to more readily 
-# translate the calibration on one day to the measurements on another, as 
-# you are not dependent on the actual measurements for the standardization
-# (in contrast to the scaled equivalent of the Z-score). Importantly, the 
-# `minmax_standardize` function does this transformation, as defined in the 
-# utility functions.# 
-# Unfortunately, we don't have the anchors' positions, so we will assume that 
-# they lie at the sides of the "real positions" grid. In reality, this will 
-# probably be off by a few tens of centimeters, but we will have to do 
-# another, more precisely done calibration to combat the issues that this 
-# brings.
-results <- lapply(data_files, 
-                  \(i) data_list[[i]] %>% 
-                      dplyr::mutate(x = normalize_position(x, 
-                                                           min_x = min(anchor_list[[i]]$x), 
-                                                           max_x = max(anchor_list[[i]]$x)), 
-                                    y = normalize_position(y, 
-                                                           min_x = min(anchor_list[[i]]$y), 
-                                                           max_x = max(anchor_list[[i]]$y)), 
-                                    X = normalize_position(X, 
-                                                           min_x = min(anchor_list[[i]]$x), 
-                                                           max_x = max(anchor_list[[i]]$x)), 
-                                    Y = normalize_position(Y, 
-                                                           min_x = min(anchor_list[[i]]$y), 
-                                                           max_x = max(anchor_list[[i]]$y))) %>% 
-                      polynomial(n = 10, simple = FALSE))
-names(results) <- data_files
+params <- polynomial(all_data)
+saveRDS(params, file.path("results", "study 1", "polynomial.Rds"))
 
-saveRDS(results, 
-        file.path("results", "stationary", "polynomial_params.Rds"))
+# Let's check whether this works. 
+correct <- function(x) {
+    # Create the Y and X variables to be used in the polynomial computation
+    X <- cbind(
+        x$x, 
+        x$x^2,
+        x$x^3,
+        x$x^4,
+        x$y, 
+        x$y^2,
+        x$y^3,
+        x$y^4
+    )
+    B <- readRDS(file.path("results", "study 1", "polynomial.Rds"))
 
-# Let's check whether this works
-filtered <- lapply(data_files, 
-                   \(i) data_list[[i]] %>% 
-                       dplyr::mutate(x = normalize_position(x, 
-                                                            min_x = min(anchor_list[[i]]$x), 
-                                                            max_x = max(anchor_list[[i]]$x)), 
-                                     y = normalize_position(y, 
-                                                            min_x = min(anchor_list[[i]]$y), 
-                                                            max_x = max(anchor_list[[i]]$y))) %>% 
-                       polynomial_distortion(results[[i]], n = 10, simple = FALSE) %>% 
-                       dplyr::mutate(x = denormalize_position(x, 
-                                                              min_x = min(anchor_list[[i]]$x), 
-                                                              max_x = max(anchor_list[[i]]$x)), 
-                                     y = denormalize_position(y, 
-                                                              min_x = min(anchor_list[[i]]$y), 
-                                                              max_x = max(anchor_list[[i]]$y))))
-names(filtered) <- data_files
+    # Compute the result Y and add it to the dataframe
+    Y <- X %*% B
+    x$x_corrected <- Y[, 1]
+    x$y_corrected <- Y[, 2]
 
-# Create plots
-tmp <- append(data_list, filtered)
-tmp_names <- names(tmp)
-plots <- lapply(seq_along(tmp), 
-                \(x) plot(tmp[[x]], per_iteration = FALSE) + 
-                    ggplot2::labs(title = tmp_names[x]))
-plots <- ggpubr::ggarrange(plotlist = plots, 
-                           nrow = 2, 
-                           ncol = length(data_files))
-
-ggplot2::ggsave(file.path("figures", "stationary", "systematic_error_filtered.jpg"), 
-                plots,                
-                width = 5000, 
-                height = 2200, 
-                unit = "px")
-
-# Interpretation of the results: 
-#   - For all datasets, distortion seems to disappear somewhat, although its 
-#     success varies
-#   - For the 22-12-2023 data, the distortion seems to disappear the least
-
-
-
-
-
-
-
-
-
-# Also read in the data on where the anchors were located for these data.
-files <- c("anchor_position_14-10-2023", 
-           "anchor_position_21-10-2023",
-           "anchor_position_22-12-2023")
-anchor_list <- lapply(files, 
-                      \(x) readRDS(file.path("data", paste0(x, ".Rds"))))
-names(anchor_list) <- data_files
-
-# Make a distinction between 6 and 4 anchor data
-for(i in c(4, 6)) {
-    idx <- paste0(data_files[3], "_", i)
-    data_list[[idx]] <- data_list[[3]] %>% 
-        dplyr::filter(anchors == i)
-    anchor_list[[idx]] <- anchor_list[[3]]
+    return(x)
 }
 
-# Adjust the data_files vector
-data_files <- names(data_list)
+# Correct the data and transform the positions back to their original locations.
+corrected_data <- correct(all_data) %>% 
+    dplyr::mutate(
+        x = (anchor_xmax - anchor_xmin) * (x + 1) / 2 + anchor_xmin,
+        y = (anchor_ymax - anchor_ymin) * (y + 1) / 2 + anchor_ymin,
+        X = (anchor_xmax - anchor_xmin) * (X + 1) / 2 + anchor_xmin,
+        Y = (anchor_ymax - anchor_ymin) * (Y + 1) / 2 + anchor_ymin,
+        x_corrected = (anchor_xmax - anchor_xmin) * (x_corrected + 1) / 2 + anchor_xmin,
+        y_corrected = (anchor_ymax - anchor_ymin) * (y_corrected + 1) / 2 + anchor_ymin
+    )
+
+# Compute the distance of the data and the corrected data to the expected 
+# positions.
+dist <- corrected_data %>% 
+    dplyr::mutate(
+        dist = sqrt((x - X)^2 + (y - Y)^2),
+        dist_cor = sqrt((x_corrected - X)^2 + (y_corrected - Y)^2),
+        x_group = X - mean(x),
+        y_group = Y - mean(y)
+    ) 
+
+# Let's compare the efficacy of getting rid of the distortion with the current
+# method. For this, we use a nonparametric bootstrapping procedure, bootstrapping
+# the mean distance of the measured/corrected position vs the real position.
+# We do this for each of the datasets separately.
+studies <- unique(dist$day)
+x_group <- unique(dist$x_group)
+y_group <- unique(dist$y_group)
+results <- matrix(
+    0, 
+    nrow = length(studies), 
+    ncol = 9
+)
+N <- 1000
+
+set.seed(11) # Hagiophobia - Trophy Scars
+for(i in seq_along(studies)) {
+    # Select the data of interest
+    data_i <- dist[dist$day == studies[i], ]
+    tags <- unique(data_i$tag)
+
+    # Instantiate two vectors that will contain the bootstrapped result. Despite
+    # me wanting to, I didn't vectorize this to spare the memory of my pc, as 
+    # vectorized nonparametric boostraps are quite heavy on memory with these 
+    # data.
+    #
+    # Specifications of the bootstrap:
+    #   - 1000 samples
+    #   - Relationship between uncorrected and corrected remains
+    #   - Sample sizes equal for bootstrap and real data within tags
+    #
+    # First determine which indices to take for each of the bootstraps. Then 
+    # loop over each of the bootstraps and compute the statistic of interest.
+    bootstrapped <- matrix(
+        0, 
+        nrow = nrow(data_i), 
+        ncol = N
+    )
+    idx <- 1
+    for(j in seq_along(tags)) {
+        # Select tag data
+        sample_idx <- which(data_i$tag == tags[j])
+
+        # Bootstrap indices and save them in the general index list
+        bootstrapped[idx:(idx + length(sample_idx) - 1), ] <- sample(
+            sample_idx,
+            length(sample_idx) * N,
+            replace = TRUE
+        )
+
+        # Update index idx
+        idx <- idx + length(sample_idx)
+    }
+
+    # Now that we have the indices, bootstrap the data itself and compute
+    # the mean distance from the real positions
+    uncorrected <- corrected <- difference <- numeric(N)
+    for(j in seq_len(N)) {
+        idx <- bootstrapped[, j]
+        uncorrected[j] <- dist$dist[idx] %>% 
+            mean()
+        corrected[j] <- dist$dist_cor[idx] %>% 
+            mean()
+        difference[j] <- (dist$dist[idx] - dist$dist_cor[idx]) %>% 
+            mean()
+    }
+
+    # Save the statistics of interest
+    results[i, ] <- c(
+        mean(uncorrected),
+        quantile(uncorrected, 0.025),
+        quantile(uncorrected, 0.975),
+        mean(corrected), 
+        quantile(corrected, 0.025),
+        quantile(corrected, 0.975),
+        mean(difference), 
+        quantile(difference, 0.025),
+        quantile(difference, 0.975)
+    )
+
+    # # Transform to a dataframe, add information on the x- and y-groups and 
+    # # compute the statistics of interest
+    # tmp <- data.frame(
+    #     uncorrected = uncorrected,
+    #     corrected = corrected,
+    #     difference = difference,
+    #     x_group = x_group,
+    #     y_group = y_group
+    # ) 
+    
+    # tmp_x <- tmp %>% 
+    #     dplyr::group_by(x_group) %>% 
+    #     dplyr::summarize(
+    #         x_group = x_group[1],
+    #         y_group = NA,
+    #         m_uncorrected = mean(uncorrected),
+    #         q025_uncorrected = quantile(uncorrected, 0.005),
+    #         q975_uncorrected = quantile(uncorrected, 0.995),
+    #         m_corrected = mean(corrected), 
+    #         q025_corrected = quantile(corrected, 0.005),
+    #         q975_corrected = quantile(corrected, 0.995),
+    #         m_difference = mean(difference), 
+    #         q025_difference = quantile(difference, 0.005),
+    #         q975_difference = quantile(difference, 0.995)
+    #     )
+
+    # tmp_y <- tmp %>% 
+    #     dplyr::group_by(y_group) %>% 
+    #     dplyr::summarize(
+    #         x_group = NA,
+    #         y_group = y_group[1],
+    #         m_uncorrected = mean(uncorrected),
+    #         q025_uncorrected = quantile(uncorrected, 0.005),
+    #         q975_uncorrected = quantile(uncorrected, 0.995),
+    #         m_corrected = mean(corrected), 
+    #         q025_corrected = quantile(corrected, 0.005),
+    #         q975_corrected = quantile(corrected, 0.995),
+    #         m_difference = mean(difference), 
+    #         q025_difference = quantile(difference, 0.005),
+    #         q975_difference = quantile(difference, 0.995)
+    #     )
+
+    # tmp_xy <- tmp %>% 
+    #     dplyr::group_by(x_group, y_group) %>% 
+    #     dplyr::summarize(
+    #         x_group = x_group[1],
+    #         y_group = y_group[1],
+    #         m_uncorrected = mean(uncorrected),
+    #         q025_uncorrected = quantile(uncorrected, 0.005),
+    #         q975_uncorrected = quantile(uncorrected, 0.995),
+    #         m_corrected = mean(corrected), 
+    #         q025_corrected = quantile(corrected, 0.005),
+    #         q975_corrected = quantile(corrected, 0.995),
+    #         m_difference = mean(difference), 
+    #         q025_difference = quantile(difference, 0.005),
+    #         q975_difference = quantile(difference, 0.995)
+    #     )
+
+    # # Bind the results together and put them in the list
+    # tmp <- rbind(
+    #     tmp_x, 
+    #     tmp_y,
+    #     tmp_xy
+    # )
+    # tmp$significance <- (tmp$q025_difference > 0) | (tmp$q975_difference < 0)
+    # tmp$full_ridance <- (tmp$q025_corrected < 0) & (tmp$q975_corrected > 0)
+
+    # results[[studies[i]]] <- tmp
+}
+
+results <- as.data.frame(results) %>% 
+    setNames(
+        c(
+            "m_uncorrected",
+            "q025_uncorrected",
+            "q975_uncorrected",
+            "m_corrected",
+            "q025_corrected",
+            "q975_corrected",
+            "m_difference",
+            "q025_difference",
+            "q975_difference"
+        )
+    )
+results$significance <- (results$q025_difference > 0) | (results$q975_difference < 0)
+results$full_ridance <- (results$q025_difference < 0) & (results$q975_difference > 0)
+
+# Significant reduction in the systematic error, but no riddance yet. Instead of
+# an (unsigned) bias of around 24cm, we reduce the (unsigned) bias to around 
+# 11cm. Unclear, unhowever, how much bias reduction there is on the level of the 
+# tags.
+#
+# TO DO: Check whether relationship to x_group and y_group. A bit more difficult
+#        to achieve with the bootstrap, so maybe real ANOVA?
+
+# Visualize the bias when correction with the polynomial equation is done.
+plots <- lapply(
+    seq_along(studies), 
+    function(i) {
+        tmp <- dist[dist$day == studies[i], ]
+        tmp$x <- tmp$x_corrected
+        tmp$y <- tmp$y_corrected
+        
+        return(
+            bias_plot(
+                tmp,
+                studies[i]
+            )
+        )
+    }
+)
+plots <- append(
+    list(
+        ggpubr::ggarrange(
+            nameless::name_plot("X", size = 17),
+            nameless::name_plot("Y", size = 17),
+            ncol = 1
+        )
+    ),
+    plots
+)
+
+plt <- ggpubr::ggarrange(
+    plotlist = plots,
+    nrow = 1,
+    widths = c(0.1, rep(0.2, 4))
+)
+ggplot2::ggsave(
+    file.path("figures", "study 1", "systematic error (polynomial).png"),
+    plt,
+    width = 1500 * 4,
+    height = 750 * 4,
+    units = "px"
+)
+
+# Some additional visualization of the real and measured positions before and 
+# after the correction.
+#
+# Create the function that will handle the plotting.
+grid <- function(data) {
+    # Uncorrected
+    plt_1 <- ggplot2::ggplot(data, 
+                             ggplot2::aes(x = x,
+                                          y = y)) +
+        ggplot2::geom_point(size = 3, 
+                            color = "black") +
+        ggplot2::annotate("point", 
+                          x = data$X, 
+                          y = data$Y,
+                          size = 3,
+                          color = "cornflowerblue") +
+        ggplot2::annotate("point", 
+                          x = rep(c(data$anchor_xmin, data$anchor_xmax), each = 2),
+                          y = rep(c(data$anchor_ymin, data$anchor_ymax), times = 2),
+                          shape = 17,
+                          size = 5, 
+                          color = "salmon") +
+        ggplot2::lims(x = range(c(data$anchor_xmin, data$anchor_xmax)), 
+                      y = range(c(data$anchor_ymin, data$anchor_ymax))) +
+        ggplot2::labs(x = "x",
+                      y = "y",
+                      title = "Before") +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(plot.title = ggplot2::element_text(size = 40,
+                                                          hjust = 0.5),
+                       axis.title = ggplot2::element_text(size = 30),
+                       axis.text = ggplot2::element_text(size = 20), 
+                       panel.background = ggplot2::element_rect(fill = NA, 
+                                                                linewidth = 1.5),
+                       legend.position = "none") +
+        ggplot2::coord_equal()
+            
+    # Corrected
+    plt_2 <- ggplot2::ggplot(data, 
+                             ggplot2::aes(x = x_corrected,
+                                          y = y_corrected)) +
+        ggplot2::geom_point(size = 3, 
+                            color = "black") +
+        ggplot2::annotate("point", 
+                          x = data$X, 
+                          y = data$Y,
+                          size = 3,
+                          color = "cornflowerblue") +
+        ggplot2::annotate("point", 
+                          x = rep(c(data$anchor_xmin, data$anchor_xmax), each = 2),
+                          y = rep(c(data$anchor_ymin, data$anchor_ymax), times = 2),
+                          shape = 17,
+                          size = 5, 
+                          color = "salmon") +
+        ggplot2::lims(x = range(c(data$anchor_xmin, data$anchor_xmax)), 
+                      y = range(c(data$anchor_ymin, data$anchor_ymax))) +
+        ggplot2::labs(x = "x",
+                      y = "y",
+                      title = "After") +
+        ggplot2::theme_minimal() +
+        ggplot2::theme(plot.title = ggplot2::element_text(size = 40,
+                                                          hjust = 0.5),
+                       axis.title = ggplot2::element_text(size = 30),
+                       axis.text = ggplot2::element_text(size = 20), 
+                       panel.background = ggplot2::element_rect(fill = NA, 
+                                                                linewidth = 1.5),
+                       legend.position = "none") +
+        ggplot2::coord_equal()
+
+    return(
+        ggpubr::ggarrange(
+            plt_1,
+            plt_2,
+            nrow = 1
+        )
+    )
+}
+
+plots <- lapply(
+    seq_along(studies), 
+    function(i) {
+        tmp <- dist[dist$day == studies[i], ]
+        tmp$x <- tmp$x_corrected
+        tmp$y <- tmp$y_corrected
+        
+        return(grid(tmp))
+    }
+)
+
+plt <- ggpubr::ggarrange(
+    # Name plots
+    ggpubr::ggarrange(
+        plotlist = lapply(
+            studies,
+            \(x) nameless::name_plot(x, size = 17)
+        ),
+        ncol = 1
+    ),
+    # Actual grids
+    ggpubr::ggarrange(
+        plotlist = plots,
+        nrow = length(studies)
+    ),
+    widths = c(0.2, 0.8)
+)
+ggplot2::ggsave(
+    file.path("figures", "study 1", "systematic error: grid.png"),
+    plt,
+    width = 1500 * 4,
+    height = 3000 * 4,
+    units = "px"
+)
+
+
+
+
+
+
+
+
+
+
+
 
 
 
