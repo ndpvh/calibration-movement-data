@@ -382,7 +382,7 @@ aic <- function(x, degree) {
     result <- polynomial(x, degree)
 
     # Compute and return the AIC
-    k <- 2 * (1 + 2 * degree)
+    k <- length(result$B)
     n <- nrow(x)
 
     return(n * log(result$SSE / n) + 2 * (k + 1))
@@ -571,9 +571,21 @@ correct <- function(x) {
 }
 
 # Correct the data and transform the positions back to their original locations.
+# Additionally compute the distance of the raw and the corrected measurements
+# to the real positions.
 corrected_data <- lapply(
     data_list, 
-    \(x) correct(x) %>% 
+    \(x) x %>% 
+        # Transform to -1, 1 range based on anchor positions
+        dplyr::mutate(
+            x = 2 * (x - anchor_xmin) / (anchor_xmax - anchor_xmin) - 1,
+            y = 2 * (y - anchor_ymin) / (anchor_ymax - anchor_ymin) - 1,
+            X = 2 * (X - anchor_xmin) / (anchor_xmax - anchor_xmin) - 1,
+            Y = 2 * (Y - anchor_ymin) / (anchor_ymax - anchor_ymin) - 1
+        ) %>% 
+        # Use the polynomial to correct the distortion
+        correct() %>% 
+        # Transform back to original scale
         dplyr::mutate(
             x = (anchor_xmax - anchor_xmin) * (x + 1) / 2 + anchor_xmin,
             y = (anchor_ymax - anchor_ymin) * (y + 1) / 2 + anchor_ymin,
@@ -581,18 +593,16 @@ corrected_data <- lapply(
             Y = (anchor_ymax - anchor_ymin) * (Y + 1) / 2 + anchor_ymin,
             x_corrected = (anchor_xmax - anchor_xmin) * (x_corrected + 1) / 2 + anchor_xmin,
             y_corrected = (anchor_ymax - anchor_ymin) * (y_corrected + 1) / 2 + anchor_ymin
+        ) %>% 
+        # Compute distance as a metric of success of the transformation
+        dplyr::mutate(
+            dist = sqrt((x - X)^2 + (y - Y)^2),
+            dist_cor = sqrt((x_corrected - X)^2 + (y_corrected - Y)^2),
+            x_group = X - mean(x),
+            y_group = Y - mean(y) 
         )
 )
-
-# Compute the distance of the data and the corrected data to the expected 
-# positions.
-dist <- corrected_data %>% 
-    dplyr::mutate(
-        dist = sqrt((x - X)^2 + (y - Y)^2),
-        dist_cor = sqrt((x_corrected - X)^2 + (y_corrected - Y)^2),
-        x_group = X - mean(x),
-        y_group = Y - mean(y)
-    ) 
+names(corrected_data) <- names(data_list)
 
 # Let's compare the efficacy of getting rid of the distortion with the current
 # method. For this, we use a nonparametric bootstrapping procedure, bootstrapping
@@ -611,7 +621,7 @@ N <- 1000
 set.seed(11) # Hagiophobia - Trophy Scars
 for(i in seq_along(studies)) {
     # Select the data of interest
-    data_i <- dist[dist$day == studies[i], ]
+    data_i <- corrected_data[[studies[i]]]
     tags <- unique(data_i$tag)
 
     # Instantiate two vectors that will contain the bootstrapped result. Despite
@@ -776,7 +786,7 @@ results$full_ridance <- (results$q025_difference < 0) & (results$q975_difference
 plots <- lapply(
     seq_along(studies), 
     function(i) {
-        tmp <- dist[dist$day == studies[i], ]
+        tmp <- corrected_data[[studies[i]]]
         tmp$x <- tmp$x_corrected
         tmp$y <- tmp$y_corrected
         
@@ -816,7 +826,7 @@ ggplot2::ggsave(
 # after the correction.
 #
 # Create the function that will handle the plotting.
-grid <- function(data) {
+grid <- function(data, title = TRUE) {
     # Uncorrected
     plt_1 <- ggplot2::ggplot(data, 
                              ggplot2::aes(x = x,
@@ -838,7 +848,7 @@ grid <- function(data) {
                       y = range(c(data$anchor_ymin, data$anchor_ymax))) +
         ggplot2::labs(x = "x",
                       y = "y",
-                      title = "Before") +
+                      title = ifelse(title, "Before", " ")) +
         ggplot2::theme_minimal() +
         ggplot2::theme(plot.title = ggplot2::element_text(size = 40,
                                                           hjust = 0.5),
@@ -870,7 +880,7 @@ grid <- function(data) {
                       y = range(c(data$anchor_ymin, data$anchor_ymax))) +
         ggplot2::labs(x = "x",
                       y = "y",
-                      title = "After") +
+                      title = ifelse(title, "After", " ")) +
         ggplot2::theme_minimal() +
         ggplot2::theme(plot.title = ggplot2::element_text(size = 40,
                                                           hjust = 0.5),
@@ -893,11 +903,11 @@ grid <- function(data) {
 plots <- lapply(
     seq_along(studies), 
     function(i) {
-        tmp <- dist[dist$day == studies[i], ]
+        tmp <- corrected_data[[studies[i]]]
         tmp$x <- tmp$x_corrected
         tmp$y <- tmp$y_corrected
         
-        return(grid(tmp))
+        return(grid(tmp, i == 1))
     }
 )
 
@@ -924,17 +934,6 @@ ggplot2::ggsave(
     height = 3000 * 4,
     units = "px"
 )
-
-
-
-
-
-
-
-
-
-
-
 
 
 
