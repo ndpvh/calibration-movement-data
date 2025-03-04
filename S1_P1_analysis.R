@@ -289,7 +289,7 @@ plt <- ggpubr::ggarrange(
     widths = c(0.1, rep(0.2, 4))
 )
 ggplot2::ggsave(
-    file.path("figures", "study 1", "systematic error.png"),
+    file.path("figures", "study 1", "systematic error, uncorrected.png"),
     plt,
     width = 1500 * 4,
     height = 750 * 4,
@@ -317,43 +317,250 @@ all_data <- do.call(
     )
 
 # Create a function that will take in the data and compute the parameters of 
-# interest through least-squares
-polynomial <- function(x) {
-    # Create the Y and X variables to be used in the polynomial computation
+# interest through least-squares. We allow the degree of the polynomial to be 
+# specified by the user, allowing us to compare different polynomial fits to 
+# each other through AIC and cross-validation.
+#
+# Separate functions for the creation of the primary variables in the least-
+# squares and for the computation. This allows us to use the same functions 
+# in the cross-validation, reducing the redundancy in the code.
+create_xy <- function(x, degree) {
     Y <- cbind(x$X, x$Y)
-    X <- cbind(
-        x$x, 
-        x$x^2,
-        x$x^3,
-        x$x^4,
-        x$y, 
-        x$y^2,
-        x$y^3,
-        x$y^4
-    )
 
-    # Compute the parameters through the analytic solution of the least-squares
-    B <- solve(t(X) %*% X) %*% (t(X) %*% Y)
-    return(B)
+    X <- matrix(
+        1, 
+        nrow = nrow(x),
+        ncol = 1
+    )
+    for(i in 1:degree) {
+        X <- cbind(X, x$x^i, x$y^i)
+    }
+
+    return(
+        list(
+            "Y" = Y,
+            "X" = X
+        )
+    )
 }
 
-params <- polynomial(all_data)
-saveRDS(params, file.path("results", "study 1", "polynomial.Rds"))
+polynomial <- function(x, degree) {
+    # Create the Y and X variables to be used in the polynomial computation
+    variables <- create_xy(x, degree)
+    Y <- variables$Y 
+    X <- variables$X
+
+    # Compute the parameters through the analytic solution of the least-squares
+    B <- tryCatch(
+        solve(t(X) %*% X) %*% (t(X) %*% Y),
+        error = function(e) {
+            return(NA)
+        }
+    )
+
+    # Get the SSE
+    if(any(is.na(B))) {
+        SSE <- NA
+    } else {
+        SSE <- sum((Y - X %*% B)^2)
+    }
+    
+    return(
+        list(
+            "Y" = Y,
+            "X" = X,
+            "B" = B, 
+            "SSE" = SSE
+        )
+    )
+}
+
+# Define the AIC function. Takes in the data and degree, and will return the 
+# resulting AIC based on the SSE.
+aic <- function(x, degree) {
+    # Compute the polynomial
+    result <- polynomial(x, degree)
+
+    # Compute and return the AIC
+    k <- 2 * (1 + 2 * degree)
+    n <- nrow(x)
+
+    return(n * log(result$SSE / n) + 2 * (k + 1))
+}
+
+# Define the cross-validation function. Takes in data and degree, and will return
+# the MSE for the test data.
+#
+# Used a leave-one-out cross-validation on the tags, so that all data of a single
+# tag (location) will be used as test data.
+cross_validation <- function(x, degree) {
+    # Define the tags to leave out of the training procedure at each iteration
+    tags <- unique(x$tag)
+    iter <- length(tags)
+
+    # Loop over each of the iterations
+    MSE <- numeric(iter)
+    for(i in 1:iter) {
+        # Get all non-NA indices to be used in this iteration
+        idy <- which(x$tag == tags[i])
+
+        # Compute the polynomial on the training set
+        data_i <- x[-idy, ]
+        params <- polynomial(data_i, degree)
+
+        if(is.na(params$SSE)) {
+            MSE[i] <- NA
+            next
+        }
+
+        # Create the variables of interest based on the test set
+        variables <- create_xy(x[idy, ], degree)
+        Y <- variables$Y 
+        X <- variables$X 
+
+        # Compute the MSE for this iteration
+        B <- params$B 
+        MSE[i] <- sum((Y - X %*% B)^2) / length(idy)
+    }
+
+    # Return the mean MSE across all iterations as the metric for fit
+    return(mean(MSE, na.rm = TRUE))
+}
+
+# With all necessary functions defined, loop over all data-files and all 
+# polynomial degrees of interest and compute AICs and MSEs from the 
+# cross-validation
+studies <- unique(dist$day)
+
+set.seed(10) # Retrograde - Silverstein
+result <- lapply(
+    studies, 
+    function(x) {
+        # Select the data for only that day
+        data_x <- all_data[all_data$day == x, ]
+
+        # Perform aic and cross-validation for each of the degrees of interest
+        AIC <- MSE <- numeric(15)
+        for(i in 1:15) {
+            print(i)
+            AIC[i] <- aic(data_x, i)
+            MSE[i] <- cross_validation(data_x, i)
+        }
+
+        # Create a dataframe combining these results for this specific day
+        result <- cbind(1:15, AIC, MSE) %>% 
+            as.data.frame() %>% 
+            setNames(c("degree", "aic", "mse"))
+        result$day <- x 
+
+        return(result)
+    }
+)
+
+# Bind the results together and inspect them
+result <- do.call("rbind", result)
+result <- rbind(
+    result,
+    result %>% 
+        dplyr::group_by(degree) %>% 
+        dplyr::summarize(
+            day = "average",
+            degree = degree[1],
+            aic = mean(aic, na.rm = TRUE),
+            mse = mean(mse, na.rm = TRUE)
+        )
+)
+data.table::fwrite(
+    result,
+    file.path("results", "study 1", "polynomial, degree comparison.csv")
+)
+
+plt_1 <- ggplot2::ggplot(result,
+                         ggplot2::aes(x = degree, 
+                                      y = aic, 
+                                      color = factor(day))) +
+    ggplot2::geom_line(linewidth = 2) +
+    ggplot2::geom_point(size = 4) +
+    ggplot2::scale_color_manual(values = c("14-10-2023" = "cornflowerblue", 
+                                           "21-10-2023" = "salmon",
+                                           "22-12-2023" = "goldenrod",
+                                           "16-11-2024" = "darkolivegreen4",
+                                           "average" = "black")) +
+    ggplot2::scale_y_continuous(labels = scales::scientific) +
+    ggplot2::labs(x = "Degree of the polynomial",
+                  y = "AIC",
+                  title = "Fit",
+                  color = "Day") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(plot.title = ggplot2::element_text(size = 40,
+                                                      hjust = 0.5),
+                   axis.title = ggplot2::element_text(size = 30),
+                   axis.text = ggplot2::element_text(size = 20), 
+                   legend.title = ggplot2::element_text(size = 20),
+                   legend.text = ggplot2::element_text(size = 17),
+                   panel.background = ggplot2::element_rect(fill = NA, 
+                                                            linewidth = 1.5))
+
+plt_2 <- ggplot2::ggplot(result,
+                         ggplot2::aes(x = degree, 
+                                      y = mse, 
+                                      color = factor(day))) +
+    ggplot2::geom_line(linewidth = 2) +
+    ggplot2::geom_point(size = 4) +
+    ggplot2::scale_color_manual(values = c("14-10-2023" = "cornflowerblue", 
+                                           "21-10-2023" = "salmon",
+                                           "22-12-2023" = "goldenrod",
+                                           "16-11-2024" = "darkolivegreen4",
+                                           "average" = "black")) +
+    ggplot2::scale_y_continuous(labels = scales::scientific) +
+    ggplot2::labs(x = "Degree of the polynomial",
+                  y = "MSE",
+                  title = "Cross-validation",
+                  color = "Day") +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(plot.title = ggplot2::element_text(size = 40,
+                                                      hjust = 0.5),
+                   axis.title = ggplot2::element_text(size = 30),
+                   axis.text = ggplot2::element_text(size = 20), 
+                   legend.title = ggplot2::element_text(size = 20),
+                   legend.text = ggplot2::element_text(size = 17),
+                   panel.background = ggplot2::element_rect(fill = NA, 
+                                                            linewidth = 1.5))
+
+plt <- ggpubr::ggarrange(
+    plt_1, 
+    plt_2,
+    nrow = 1,
+    common.legend = TRUE,
+    legend = "right"
+)
+
+ggplot2::ggsave(
+    file.path("figures", "study 1", "systematic error, polynomial degree comparison.png"),
+    plt,
+    width = 1500 * 3,
+    height = 700 * 3,
+    unit = "px"
+)
+
+# Result:
+#   - AIC does not show sufficient punishing for more complex models and is 
+#     therefore discarded
+#   - Cross-validation shows the best fit across days for the polynomial of 
+#     degree 9. This one is selected for the next steps.
+
+
+
+# Error reduction ##############################################################
 
 # Let's check whether this works. 
 correct <- function(x) {
-    # Create the Y and X variables to be used in the polynomial computation
-    X <- cbind(
-        x$x, 
-        x$x^2,
-        x$x^3,
-        x$x^4,
-        x$y, 
-        x$y^2,
-        x$y^3,
-        x$y^4
-    )
-    B <- readRDS(file.path("results", "study 1", "polynomial.Rds"))
+    # Estimate a polynomial of the 9th degree
+    params <- polynomial(x, 9)
+
+    # Retrieve the independent variables X and the parameters B
+    X <- params$X 
+    B <- params$B
 
     # Compute the result Y and add it to the dataframe
     Y <- X %*% B
@@ -364,15 +571,18 @@ correct <- function(x) {
 }
 
 # Correct the data and transform the positions back to their original locations.
-corrected_data <- correct(all_data) %>% 
-    dplyr::mutate(
-        x = (anchor_xmax - anchor_xmin) * (x + 1) / 2 + anchor_xmin,
-        y = (anchor_ymax - anchor_ymin) * (y + 1) / 2 + anchor_ymin,
-        X = (anchor_xmax - anchor_xmin) * (X + 1) / 2 + anchor_xmin,
-        Y = (anchor_ymax - anchor_ymin) * (Y + 1) / 2 + anchor_ymin,
-        x_corrected = (anchor_xmax - anchor_xmin) * (x_corrected + 1) / 2 + anchor_xmin,
-        y_corrected = (anchor_ymax - anchor_ymin) * (y_corrected + 1) / 2 + anchor_ymin
-    )
+corrected_data <- lapply(
+    data_list, 
+    \(x) correct(x) %>% 
+        dplyr::mutate(
+            x = (anchor_xmax - anchor_xmin) * (x + 1) / 2 + anchor_xmin,
+            y = (anchor_ymax - anchor_ymin) * (y + 1) / 2 + anchor_ymin,
+            X = (anchor_xmax - anchor_xmin) * (X + 1) / 2 + anchor_xmin,
+            Y = (anchor_ymax - anchor_ymin) * (Y + 1) / 2 + anchor_ymin,
+            x_corrected = (anchor_xmax - anchor_xmin) * (x_corrected + 1) / 2 + anchor_xmin,
+            y_corrected = (anchor_ymax - anchor_ymin) * (y_corrected + 1) / 2 + anchor_ymin
+        )
+)
 
 # Compute the distance of the data and the corrected data to the expected 
 # positions.
@@ -558,6 +768,10 @@ results$full_ridance <- (results$q025_difference < 0) & (results$q975_difference
 # TO DO: Check whether relationship to x_group and y_group. A bit more difficult
 #        to achieve with the bootstrap, so maybe real ANOVA?
 
+
+
+# Visualization ################################################################
+
 # Visualize the bias when correction with the polynomial equation is done.
 plots <- lapply(
     seq_along(studies), 
@@ -591,7 +805,7 @@ plt <- ggpubr::ggarrange(
     widths = c(0.1, rep(0.2, 4))
 )
 ggplot2::ggsave(
-    file.path("figures", "study 1", "systematic error (polynomial).png"),
+    file.path("figures", "study 1", "systematic error, corrected.png"),
     plt,
     width = 1500 * 4,
     height = 750 * 4,
@@ -704,7 +918,7 @@ plt <- ggpubr::ggarrange(
     widths = c(0.2, 0.8)
 )
 ggplot2::ggsave(
-    file.path("figures", "study 1", "systematic error: grid.png"),
+    file.path("figures", "study 1", "systematic error, grid.png"),
     plt,
     width = 1500 * 4,
     height = 3000 * 4,
