@@ -1675,66 +1675,36 @@ sampling_rate <- function(x){
         return()
 }
 
-# Again loop over each of the stationary datasets
-for(i in seq_along(stationary)){
-    # Load the stationary data for a given date and convert the timestamps to 
-    # milliseconds
-    data <- load_stationary(stationary[i]) %>% 
-        mutate(duration = convert_to_millisecond(timestamp))
+# Again loop over each of the datasets. Note that in the results, you will find 
+# an NA value for tag 66 in experiment "stationarity 3 - 22-12-2023". This is 
+# because that tag only has a single value attached to itself, meaning that we 
+# can safely discard this NA from the results
+results <- lapply(
+    names(data_list),
+    \(x) data_list[[x]] %>% 
+        dplyr::group_by(experiment, tag) %>% 
+        dplyr::summarize(bin_size = sampling_rate(time)) %>% 
+        dplyr::ungroup() %>% 
+        # Convert the sampling rate to Hz
+        dplyr::mutate(Hz = 1 / bin_size) %>% 
+        dplyr::select(experiment, tag, bin_size, Hz) %>% 
+        dplyr::mutate(day = x)
+)
+results <- do.call("rbind", results)
 
-    # Compute the mean sampling rate for each tag separately and make the 
-    # dataframe somewhat easier to interpret
-    result <- data %>% 
-        # Get the sampling rate in msec
-        group_by(tag) %>% 
-        mutate(msec = sampling_rate(duration)) %>% 
-        ungroup() %>% 
-        # Convert the sampling rate to Hz: 1 / s -> 1000 / msec
-        mutate(Hz = 1000 / msec) %>% 
-        # Only retain those variables that you want to interpret
-        group_by(tag, msec, Hz) %>% 
-        tidyr::nest() %>% 
-        select(-data)
+data.table::fwrite(
+    results,
+    file.path("results", "study 1", "sampling rate.csv")
+)
 
-    # Save this result
-    save_result(result, 
-                "sampling_rate", 
-                stationary[i])
-
-    # Make another histogram to visualize the result across tags 
-    plt <- ggplot(result, 
-                  aes(x = Hz)) +
-        geom_histogram(color = "black", 
-                       fill = "cornflowerblue") +
-        labs(title = "Sampling rate per tag", 
-             x = "Hz") +
-        geom_vline(xintercept = 5, 
-                   color = "red")
-
-    ggsave(file.path("figures", 
-                     "calibration", 
-                     "stationary",
-                     paste0("sampling_rate_", stationary[i], ".png")),
-           plot = plt, 
-           units = "px", 
-           width = 1000, 
-           height = 1100)
-}
-
-# Interpretation of the result:
-#   - On the 14th of October, sampling rates varied substantially between 2 and 
-#     4Hz instead of the expected 5Hz. Sampling rates should thus be increased 
-#     for our future experiments.
-#   - On the 21st of October, we found a higher than expected sampling rate. This 
-#     might suggest that our initial attempts of changing the sampling rate from 
-#     5Hz to 8Hz on that day might have been successful, leading to an observed 
-#     sampling rate of 6-7Hz 
-#   - Some tags seem to perform worse and only send out responses every once in 
-#     a while.
-#
-# Additional comments after calibration on 22-12-2023
-#   - On this day, sampling with the 6 anchors remained relatively similar to 
-#     the sampling rate on 21-10-2023 (although with a slight loss of frequency).
-#   - Sampling with 4 anchors had an effect on the sampling frequency. Need to 
-#     find out how to increase it again.
-
+results %>% 
+    dplyr::group_by(day) %>% 
+    dplyr::summarize(
+        mean = mean(Hz, na.rm = TRUE),
+        var = var(Hz, na.rm = TRUE), 
+        q025 = quantile(Hz, 0.025, na.rm = TRUE),
+        q975 = quantile(Hz, 0.975, na.rm = TRUE),
+        min = min(Hz, na.rm = TRUE), 
+        max = max(Hz, na.rm = TRUE)
+    ) %>% 
+    View()
