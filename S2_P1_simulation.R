@@ -189,8 +189,8 @@ spiral <- function(N, p) {
 #   - For the movement data, partitions `p` are taken to be {20, 40, 80}
 #   - For the fixed data, just coordinates placed on 9 locations within a 2 x 2 
 #     square and repeated for the duration of the experiment
-#   - The time variable is created such that the data was sampled at a 7Hz rate
-#     (i.e., data were collected for about 14sec)
+#   - The time variable is created such that the data was sampled at a 10Hz rate
+#     (i.e., data were collected for about 10sec)
 #   - We repeat these same data 100 times, allowing us to aggregate across 
 #     different instantiations of simulated measurement error (allowing greater
 #     generality)
@@ -220,7 +220,7 @@ data <- lapply(
                     )
 
                 # Rescale the data so that the distance between each point is 
-                # about 0.2, which agrees with the average speed of 1.4 m/s of 
+                # about 0.14, which agrees with the average speed of 1.4 m/s of 
                 # a human. This is easily achieved by scaling the (x, y) space 
                 # with a constant factor 0.14 / current distance between points.
                 tmp <- tmp %>% 
@@ -229,8 +229,8 @@ data <- lapply(
                             NA, 
                             sqrt((x[2:N] - x[2:N - 1])^2 + (y[2:N] - y[2:N - 1])^2)
                         ),
-                        x = 0.2 * x / mean(distance, na.rm = TRUE), 
-                        y = 0.2 * y / mean(distance, na.rm = TRUE)
+                        x = 0.14 * x / mean(distance, na.rm = TRUE), 
+                        y = 0.14 * y / mean(distance, na.rm = TRUE)
                     ) %>% 
                     dplyr::select(x, y, time, id)
 
@@ -300,3 +300,280 @@ data.table::fwrite(
 
 ################################################################################
 # ADDING NOISE
+
+# Overall error ################################################################
+
+# Transform the dataset to include random error. This error will be equal to 
+# a few centimeters, based on earlier estimates of the measurement error, 
+# specifically coming from the calibration test of 22-12-2023, where the upper 
+# bound of the 99%CI was about 6cm. 
+#
+# We use the maximal variance for both x- and y-coordinates, which is equal to 
+# 0.004468. We also take the covariance into account, again selecting the 
+# maximal one. This one is equal to 0.0280662.
+filenames <- c("movement", "fixed")
+
+covariances <- do.call(
+    "rbind",
+    readRDS(file.path("results", "study 1", "unsystematic error, overall covariance.Rds"))
+)
+max_var <- max(covariances$ub[covariances$covariance != "cov_xy"])
+max_cov <- max(covariances$ub[covariances$covariance == "cov_xy"])
+S <- matrix(
+    c(max_var, max_cov, max_cov, max_var),
+    nrow = 2,
+    ncol = 2
+)
+
+set.seed(425) # Call it Karma - Silverstein
+for(i in seq_along(filenames)) {
+    # Read in the data
+    data <- data.table::fread(
+        file.path("data", "study 2", paste0(filenames[i], ".csv")),
+        data.table = FALSE
+    )
+
+    # Create the residuals and add them to the data
+    residuals <- MASS::mvrnorm(
+        nrow(data), 
+        c(0, 0), 
+        S
+    )
+
+    data <- data %>% 
+        dplyr::rename(
+            x_original = x, 
+            y_original = y
+        ) %>% 
+        dplyr::mutate(
+            x = x_original + residuals[,1], 
+            y = y_original + residuals[,2]
+        )
+
+    # Save the data
+    data.table::fwrite(
+        data, 
+        file.path("data", "study 2", paste0(filenames[i], "_R10.csv"))
+    )
+}
+
+
+
+# Temporal error ###############################################################
+
+# Here, we will need to create a vector autoregressive model that will account 
+# both for contemporaneous and lagged measurement error. The parameters that 
+# are used here are taken from estimations we did on the stationary calibration 
+# data. The measurement error is added for each experiment and id separately.
+params <- readRDS(file.path("results", "study 1", "unsystematic error, autoregression parameters.Rds"))
+B <- matrix(
+    params[3:6, 3],
+    nrow = 2, 
+    ncol = 2
+)
+S <- matrix(
+    c(
+        max(params[c(7, 10), 3]), 
+        max(params[8:9, 3]), 
+        max(params[8:9, 3]), 
+        max(params[c(7, 10), 3])
+    ),
+    nrow = 2, 
+    ncol = 2
+)
+
+# Start by creating the function that will create the measurement error to be 
+# added to the observations.
+add_residuals <- function(x) {
+    # Create a matrix that will contain the residuals and add the initial 
+    # condition
+    residuals <- MASS::mvrnorm(
+        nrow(x), 
+        c(0, 0), 
+        S
+    )
+
+    y <- matrix(0, nrow = nrow(x), ncol = 2)
+    y[1,] <- residuals[1,]
+
+    # Loop over and create the other residuals
+    for(i in seq_len(nrow(x) - 1)) {
+        y[i + 1,] <- y[i,] %*% B + residuals[i + 1,]
+    }
+
+    # Add the residuals to the dataframe and return
+    x %>% 
+        dplyr::arrange(time) %>% 
+        dplyr::mutate(
+            x = x_original + residuals[, 1], 
+            y = y_original + residuals[, 2]
+        ) %>% 
+        return()
+}
+
+# Add the error to the data
+set.seed(55) # Sober Exit(s) - Static Dress
+for(i in seq_along(filenames)) {
+    # Add normally distributed measurement error to the data
+    data <- data.table::fread(
+        file.path("data", "study 2", paste0(filenames[i], ".csv")),
+        data.table = FALSE
+    ) %>% 
+        dplyr::rename(
+            x_original = x, 
+            y_original = y
+        ) %>% 
+        dplyr::group_by(nsim, id) %>% 
+        tidyr::nest() %>% 
+        dplyr::mutate(
+            data = data %>% 
+                as.data.frame() %>% 
+                add_residuals() %>% 
+                list()
+        ) %>% 
+        tidyr::unnest(data) %>% 
+        dplyr::arrange(nsim, time, id)
+
+    # Save the data
+    data.table::fwrite(
+        data, 
+        file.path("data", "study 2", paste0(filenames[i], "_T10.csv"))
+    )
+}
+
+
+
+# Missing data #################################################################
+
+# Our data often does not have an actual sampling frequency of 10Hz, but it is 
+# ususally lower. Account for this kind of missing data, and the unequal time 
+# intervals that this creates in the data (and which may make our job 
+# difficult). We will retain a sampling frequency of 7Hz.
+#
+# Two types: Random missingness and nonrandom missingness. Create two functions
+# that will impute these missings.
+random_missing <- function(x) {
+    idx <- sample(
+        seq_len(nrow(x)), 
+        round(0.7 * nrow(x))
+    )
+
+    x[idx, c("x", "y")] <- NA 
+    return(x)
+}
+
+# We draw random time points at which no position is measured. Once chosen, we 
+# then either keep it at this one time point, or we make the period at which no 
+# measurements are obtained longer (5 observations, 10 observations, or 15 
+# observations, it being 500msec, 1sec, or 1.5sec long). We try to approximate 
+# each time as being as long as the other.
+#
+# In practice, we delete the indices in two waves: One in which we take care of 
+# the longer problems, then one in which we delete only a single data point 
+# randomly up until as there are as many missing observations for the nonrandom 
+# and the random missing data (created earlier)
+nonrandom_missing <- function(x) {
+    N <- nrow(x)
+
+    # Create relative indices per person for the blocked missing data
+    idx <- data.frame(
+        from = sample(
+            1:(length(unique(x$time)) - 15), 
+            round(0.3 * N / 10), 
+            replace = TRUE
+        ), 
+        participants = sample(
+            unique(x$id), 
+            round(0.3 * N / 10), 
+            replace = TRUE
+        )
+    ) %>%  
+        dplyr::mutate(
+            from = as.numeric(from),
+            to = from + rep(c(5, 10, 15) - 1, each = round(length(from) / 3))
+        ) 
+
+    # Explicate all indices to be deleted
+    idx <- idx %>% 
+        dplyr::rowwise() %>% 
+        dplyr::mutate(
+            indices = seq(from, to) %>% 
+                as.vector() %>% 
+                data.frame() %>% 
+                setNames("indices") %>% 
+                tidyr::nest()
+        ) %>%
+        tidyr::unnest(indices) %>% 
+        tidyr::unnest(data) %>% 
+        dplyr::ungroup() %>% 
+        dplyr::select(-from, -to)
+
+    # Delete these indices already in the way that was previously used. 
+    # Importantly, the deletion is relative to the participant, so we have to 
+    # account for the participant in this deletion.
+    x <- x %>% 
+        dplyr::group_by(id) %>% 
+        tidyr::nest() %>% 
+        dplyr::rowwise() %>% 
+        dplyr::mutate(
+            data = data %>%
+                as.data.frame() %>%
+                dplyr::mutate(index = dplyr::row_number() %in% idx$indices[idx$participant == id]) %>%
+                dplyr::filter(!index) %>% 
+                dplyr::select(-index) %>%
+                list()
+        ) %>% 
+        tidyr::unnest(data) %>%
+        dplyr::ungroup()
+
+    # Now sample the remaining time points to be deleted from the remaining data 
+    # points
+    sample_idx <- \(x) sample(seq_along(x), 
+                              round(0.6 * N))
+    x <- x %>% 
+        random_missing()
+
+    return(x)
+}
+
+# Define the files for which to impute the missing data, loop over them and 
+# impose
+filenames <- paste0(
+    rep(c("fixed", "movement"), each = 2),
+    rep(c("_R", "_T"), times = 2)
+)
+
+set.seed(9410) # Newsstand Rock (exposition) - Rx Bandits
+for(i in seq_along(filenames)) {
+    data <- data.table::fread(
+        file.path("data", "study 2", paste0(filenames[i], "10.csv")),
+        data.table = FALSE
+    )
+    
+    # Random missing
+    tmp <- data %>% 
+        dplyr::group_by(nsim) %>% 
+        random_missing() %>% 
+        dplyr::filter(!is.na(x))
+
+    data.table::fwrite(
+        tmp, 
+        file.path("data", "study 2", paste0(filenames[i], "6R.csv"))
+    )
+
+    # Nonrandom missing
+    tmp <- data %>% 
+        dplyr::group_by(nsim) %>% 
+        tidyr::nest() %>%
+        dplyr::mutate(data = data %>%  
+            as.data.frame() %>%
+            nonrandom_missing() %>%
+            list()) %>%
+        tidyr::unnest(data) %>% 
+        dplyr::filter(!is.na(x))
+
+    data.table::fwrite(
+        tmp, 
+        file.path("data", "study 2", paste0(filenames[i], "6N.csv"))
+    )
+}
