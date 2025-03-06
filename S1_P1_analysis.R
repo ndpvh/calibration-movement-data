@@ -9,10 +9,10 @@
 #          error as those of the real data.                                    #
 #                                                                              # 
 #          The structure of this file is as follows:                           # 
-#              Lx-y: Loading in datafiles                                      # 
-#              Lx-y: Examining bias                                            # 
-#              Lx-y: Examining variance                                        #     
-#              Lx-y: Examining sampling frequency                              #
+#              L23-171:     Loading in datafiles                               # 
+#              L177-1020:   Examining bias                                     # 
+#              L1026-1641:  Examining variance                                 #     
+#              L1647-1707:  Examining sampling frequency                       #
 #                                                                              #
 #          Note that it is possible to skip the first part and continue from   #
 #          second part onwards (Bias)                                          #
@@ -181,10 +181,6 @@ saveRDS(
 #          measurements. The main strategy is to compare different polynomials 
 #          of varying degrees to each other through model comparison tools. 
 #          Once a model is selected, we test its efficacy on the data at hand.
-
-
-
-
 
 data_list <- readRDS(file.path("data", "study 1", "data_list.Rds"))
 
@@ -1038,14 +1034,9 @@ ggplot2::ggsave(
 #          error across time. This assumption is tested at the end of this 
 #          section in the code.
 
-
-
-
-
 data_list <- readRDS(file.path("data", "study 1", "data_list.Rds"))
 
-#------------------------------------------------------------------------------#
-# Overall measurement error
+# Overall measurement error ####################################################
 
 # Create a function that will create bootstrapped data in an efficient way. 
 # Assumption here is that x is a dataframe that contains, among other, the 
@@ -1205,8 +1196,7 @@ saveRDS(
 
 
 
-#------------------------------------------------------------------------------#
-# Measurement error per tag
+# Measurement error per tag ####################################################
 
 # Loop over the different dates and do all your estimation, but this time 
 # dispatching on the id
@@ -1411,8 +1401,7 @@ ggplot2::ggsave(
 
 
 
-#------------------------------------------------------------------------------#
-# Assumption of time-independence
+# Assumption of time-independence ##############################################
 
 # Create a function that will compute the autocorrelation for a given variable
 autocorr <- function(x) {
@@ -1655,14 +1644,9 @@ saveRDS(
 #              - Sampling rate: Will give us an idea of how many datapoints will
 #                               be averaged over when binning the data
 
-
-
-
-
 data_list <- readRDS(file.path("data", "study 1", "data_list.Rds"))
 
-#------------------------------------------------------------------------------#
-# Sampling rate
+# Sampling rate ################################################################
 
 # Create a function that will take in the duration, order them according to 
 # size, and then compute the mean difference between each of the durations
