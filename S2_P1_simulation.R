@@ -215,7 +215,7 @@ data <- lapply(
                 # Generate the data
                 tmp <- fx[[name]](p) %>% 
                     dplyr::mutate(
-                        time = (dplyr::row_number() - 1) / 7,
+                        time = (dplyr::row_number() - 1) / 10,
                         id = paste0(name, "_", p)
                     )
 
@@ -342,12 +342,12 @@ for(i in seq_along(filenames)) {
 
     data <- data %>% 
         dplyr::rename(
-            x_original = x, 
-            y_original = y
+            x_actual = x, 
+            y_actual = y
         ) %>% 
         dplyr::mutate(
-            x = x_original + residuals[,1], 
-            y = y_original + residuals[,2]
+            x = x_actual + residuals[,1], 
+            y = y_actual + residuals[,2]
         )
 
     # Save the data
@@ -405,8 +405,8 @@ add_residuals <- function(x) {
     x %>% 
         dplyr::arrange(time) %>% 
         dplyr::mutate(
-            x = x_original + residuals[, 1], 
-            y = y_original + residuals[, 2]
+            x = x_actual + residuals[, 1], 
+            y = y_actual + residuals[, 2]
         ) %>% 
         return()
 }
@@ -420,8 +420,8 @@ for(i in seq_along(filenames)) {
         data.table = FALSE
     ) %>% 
         dplyr::rename(
-            x_original = x, 
-            y_original = y
+            x_actual = x, 
+            y_actual = y
         ) %>% 
         dplyr::group_by(nsim, id) %>% 
         tidyr::nest() %>% 
@@ -518,18 +518,19 @@ nonrandom_missing <- function(x) {
         dplyr::mutate(
             data = data %>%
                 as.data.frame() %>%
-                dplyr::mutate(index = dplyr::row_number() %in% idx$indices[idx$participant == id]) %>%
+                dplyr::mutate(
+                    number = dplyr::row_number(),
+                    index = number %in% idx$indices[idx$participants == id]
+                ) %>%
                 dplyr::filter(!index) %>% 
-                dplyr::select(-index) %>%
+                dplyr::select(-index, -number) %>%
                 list()
         ) %>% 
-        tidyr::unnest(data) %>%
+        tidyr::unnest(data) %>% 
         dplyr::ungroup()
 
     # Now sample the remaining time points to be deleted from the remaining data 
     # points
-    sample_idx <- \(x) sample(seq_along(x), 
-                              round(0.6 * N))
     x <- x %>% 
         random_missing()
 
@@ -577,3 +578,139 @@ for(i in seq_along(filenames)) {
         file.path("data", "study 2", paste0(filenames[i], "6N.csv"))
     )
 }
+
+
+
+# Visualization ################################################################
+
+# Visualize the types of data that we are looking at here. Only make the 
+# distinction between fixed and movement, and between the different types of 
+# error.
+fixed <- rbind(
+    data.table::fread(
+        file.path("data", "study 2", "fixed_R10.csv"),
+        data.table = FALSE
+    ) %>% 
+        dplyr::mutate(type = "R"),
+    data.table::fread(
+        file.path("data", "study 2", "fixed_T10.csv"),
+        data.table = FALSE
+    ) %>% 
+        dplyr::mutate(type = "T")
+)
+movement <- rbind(
+    data.table::fread(
+        file.path("data", "study 2", "movement_R10.csv"),
+        data.table = FALSE
+    ) %>% 
+        dplyr::mutate(type = "R"),
+    data.table::fread(
+        file.path("data", "study 2", "movement_T10.csv"),
+        data.table = FALSE
+    ) %>% 
+        dplyr::mutate(type = "T")
+)
+
+# Select only a few of the ids to showcase
+data <- rbind(fixed, movement) %>% 
+    dplyr::filter(id %in% c("fixed_1", "circle_40", "rectangle_40", "spiral_40")) %>% 
+    dplyr::filter(nsim == 1) 
+
+# Make the plots themselves
+plots <- lapply(
+    c("actual", "R", "T"),
+    function(x) {
+        # Select the data of interest, based on the type of the error. For the 
+        # "actual" data, we need to do something special
+        if(x == "actual") {
+            selected_data <- data[data$type == "R", ] %>% 
+                dplyr::mutate(
+                    x = x_actual, 
+                    y = y_actual
+                ) %>% 
+                dplyr::select(x, y, id)
+        } else {
+            selected_data <- data[data$type == x, ] %>% 
+                dplyr::select(x, y, id)
+        }
+
+        # Loop over all of the id's and plot their positions
+        plt <- lapply(
+            unique(selected_data$id),
+            function(y) {
+                plot_data <- selected_data[selected_data$id == y, ]
+
+                title <- list(
+                    "fixed_1" = "Point",
+                    "circle_40" = "Circle",
+                    "rectangle_40" = "Rectangle",
+                    "spiral_40" = "Spiral"
+                )
+                limits <- data[data$id == y, ] %>% 
+                    dplyr::select(x, y) %>% 
+                    unlist() %>% 
+                    as.numeric() %>% 
+                    range()
+
+                return(
+                    ggplot2::ggplot(plot_data, 
+                                    ggplot2::aes(x = x, 
+                                                 y = y)) +
+                        ggplot2::geom_point(size = 3, 
+                                            color = "cornflowerblue",
+                                            shape = 19) +
+                        ggplot2::labs(x = "x",
+                                      y = "y",
+                                      title = ifelse(x == "actual", 
+                                                     title[[y]], 
+                                                     " ")) +
+                        ggplot2::lims(x = limits, 
+                                      y = limits) +
+                        ggplot2::theme_minimal() +
+                        ggplot2::theme(plot.title = ggplot2::element_text(size = 32,
+                                                                          hjust = 0.5),
+                                       axis.title = ggplot2::element_text(size = 25),
+                                       axis.text = ggplot2::element_text(size = 15), 
+                                       legend.title = ggplot2::element_text(size = 25),
+                                       legend.text = ggplot2::element_text(size = 15),
+                                       panel.background = ggplot2::element_rect(fill = NA, 
+                                                                                linewidth = 1.5))
+                )
+            }
+        )
+
+        return(
+            ggpubr::ggarrange(
+                plotlist = plt,
+                nrow = 1
+            )
+        )
+    }
+)
+
+name <- ggpubr::ggarrange(
+    plotlist = lapply(
+        c("Actual positions", "Random error", "Temporal error"),
+        \(x) nameless::name_plot(x, size = 10)
+    ),
+    ncol = 1
+)
+
+ggplot2::ggsave(
+    file.path("figures", "study 2", "data.png"),
+    ggpubr::ggarrange(
+        name,
+        ggpubr::ggarrange(
+            plotlist = plots,
+            nrow = 3
+        ),
+        ncol = 2,
+        widths = c(0.15, 0.75)
+    ),
+    width = 5600,
+    height = 3800,
+    unit = "px"
+)
+
+
+
