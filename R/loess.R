@@ -31,12 +31,18 @@ local_regression <- function(data,
         xy_data <- data.frame(z = c(grouped_data$x, grouped_data$y), 
                               time = c(grouped_data$time, max(grouped_data$time) + grouped_data$time))
     
-	# Correct the number of spans to use in the cross-validation to ensure that
-	# you have enough data.
-	data_points <- floor(nrow(grouped_data) * spans)
-	spans <- spans[data_points >= degree + 2]
+	    # Correct the number of spans to use in the cross-validation to ensure that
+	    # you have enough data.
+	    data_points <- floor(nrow(grouped_data) * spans)
+	    spans <- spans[data_points >= degree + 2]
 
-	# Perform the actual cross-validation
+        # If there are no spans to use (e.g., due to too little data), return the 
+        # unfiltered data.
+        if(length(spans) == 0) {
+            return(grouped_data)
+        }
+
+	    # Perform the actual cross-validation
         fits <- sapply(spans, 
                        \(x) locfit::gcv(z ~ locfit::lp(time, 
                                                        deg = degree, 
