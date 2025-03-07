@@ -7,9 +7,10 @@
 #          representing for movement data.                                     #
 #                                                                              #
 #          Structure of the file is as follows:                                #
-#              L21-177: Creating the functions necessary for simulation        #
-#              Lx-x: Simulating positions                                      #
-#              Lx-x: Adding noise                                              #
+#              L21-177:    Creating the functions necessary for simulation     #
+#              L183-295:   Simulating positions                                #
+#              L301-580:   Adding noise                                        #
+#              L587-717:   Visualization                                       #
 #                                                                              #
 #          Note that when adding noise, we add both time-independent noise     #
 #          and a time-dependent noise. We use the parameters estimated in the  #
@@ -581,7 +582,10 @@ for(i in seq_along(filenames)) {
 
 
 
-# Visualization ################################################################
+
+
+################################################################################
+# VISUALIZATION
 
 # Visualize the types of data that we are looking at here. Only make the 
 # distinction between fixed and movement, and between the different types of 
