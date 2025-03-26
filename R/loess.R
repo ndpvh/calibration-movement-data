@@ -34,7 +34,7 @@ local_regression <- function(data,
 	    # Correct the number of spans to use in the cross-validation to ensure that
 	    # you have enough data.
 	    data_points <- floor(nrow(grouped_data) * spans)
-	    spans <- spans[data_points >= degree + 2]
+	    spans <- spans[data_points >= degree * 5]
 
         # If there are no spans to use (e.g., due to too little data), return the 
         # unfiltered data.
