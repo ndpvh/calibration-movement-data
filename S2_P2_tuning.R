@@ -229,7 +229,7 @@ saveRDS(
 ################################################################################
 # VISUALIZATION
 
-# Plotting functions ###########################################################
+# Trajectories #################################################################
 
 # Create a function that will transform a dataframe to plot_data containing 
 # information on the segments that were walked between locations.
@@ -367,7 +367,7 @@ trajectory <- function(data) {
                                       x = xlims[1] + 0.95 * diff(xlims), 
                                       y = ylims[1] + 0.95 * diff(ylims), 
                                       label = latex2exp::TeX(paste0("$MAD = ", 
-                                                                    rmse[j],
+                                                                    mad[j],
                                                                     "$")), 
                                       size = 5,
                                       hjust = 1, 
@@ -384,7 +384,7 @@ trajectory <- function(data) {
 
             # Add a nameplot to this list
             plt <- list(
-                nameless::name_plot(x, size = 20)
+                nameless::name_plot(x, size = 20),
                 plt
             )
 
@@ -460,3 +460,46 @@ for(i in names(data)) {
         }
     }
 }
+
+
+
+
+
+# Looking at the MAD ###########################################################
+
+# Compute the MADs for each of the results
+summarized <- lapply(
+    seq_along(results),
+    \(i) results[[i]] %>% 
+        dplyr::group_by(kind, type) %>% 
+        dplyr::mutate(
+            x = x - x_actual, 
+            y = y - y_actual, 
+            dist = sqrt(x^2 + y^2)
+        ) %>% 
+        dplyr::summarize(
+            mad = mean(dist),
+            sd_mad = sd(dist)
+        ) %>% 
+        dplyr::mutate(
+            filter = names(results)[i]
+        ) %>% 
+        dplyr::ungroup()
+)
+summarized <- do.call("rbind", summarized)
+
+# Check the mean MAD for each filtering technique. These results are used to 
+# determine which filters to use in the next step.
+summarized %>% 
+    dplyr::group_by(filter) %>% 
+    dplyr::summarize(
+        mad = mean(mad),
+        sd_mad = mean(sd_mad)
+    )
+
+# Choices made:
+#   - Span 5 seems best for the summary statistics
+#   - The "linear" and "quadratic" approximations have no advantage versus 
+#     over the LOESS, so those are left out
+#   - LOESS of the 4th degree seems to have decreased performance compared to 
+#     other LOESS
