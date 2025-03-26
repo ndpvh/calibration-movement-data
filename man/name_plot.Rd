@@ -9,7 +9,7 @@ name_plot(x, ...)
 \arguments{
 \item{x}{Title to be plotted in an empty plot.}
 
-\item{...}{Additional arguments for \code{geom_text}.}
+\item{...}{Additional arguments for \code{annotate}.}
 }
 \value{
 Ggplot object
