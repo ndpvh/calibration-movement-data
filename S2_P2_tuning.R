@@ -491,11 +491,12 @@ summarized <- do.call("rbind", summarized)
 # Check the mean MAD for each filtering technique. These results are used to 
 # determine which filters to use in the next step.
 summarized %>% 
-    dplyr::group_by(filter) %>% 
+    dplyr::group_by(filter, kind) %>% 
     dplyr::summarize(
         mad = mean(mad),
         sd_mad = mean(sd_mad)
-    )
+    ) %>% 
+    View()
 
 # Choices made:
 #   - Span 5 seems best for the summary statistics
