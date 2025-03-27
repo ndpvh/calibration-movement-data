@@ -323,7 +323,9 @@ trajectory <- function(data) {
                     dplyr::select(dist) %>% 
                     unlist() %>% 
                     mean()
-            )
+            ) %>% 
+                round(digits = 4) %>% 
+                format(nsmall = 4)
 
             # Compute the limits of the plot. Makes sure both plots have the same 
             # limits
@@ -344,9 +346,9 @@ trajectory <- function(data) {
 
             # Create a name plot for the kind of movement add a name-plot
             plt <- lapply(
-                other, 
-                \(y) ggplot2::ggplot() +
-                    ggplot2::geom_segment(data = y, 
+                seq_along(other), 
+                \(i) ggplot2::ggplot() +
+                    ggplot2::geom_segment(data = other[[i]], 
                                           ggplot2::aes(x = x,
                                                        y = y,
                                                        xend = xend,
@@ -367,7 +369,7 @@ trajectory <- function(data) {
                                       x = xlims[1] + 0.95 * diff(xlims), 
                                       y = ylims[1] + 0.95 * diff(ylims), 
                                       label = latex2exp::TeX(paste0("$MAD = ", 
-                                                                    mad[j],
+                                                                    mad[i],
                                                                     "$")), 
                                       size = 5,
                                       hjust = 1, 
@@ -383,8 +385,8 @@ trajectory <- function(data) {
             )
 
             # Add a nameplot to this list
-            plt <- list(
-                nameless::name_plot(x, size = 20),
+            plt <- append(
+                list(nameless::name_plot(x, size = 20)),
                 plt
             )
 
@@ -398,12 +400,12 @@ trajectory <- function(data) {
     )
 
     plots <- append(
-        ggpubr::ggarrange(
+        list(ggpubr::ggarrange(
             nameless::name_plot(" ", size = 20),
             nameless::name_plot("Unfiltered", size = 20),
             nameless::name_plot("Filtered", size = 20),
             nrow = 1
-        ),
+        )),
         plots    
     )
 
@@ -444,17 +446,20 @@ for(i in names(data)) {
     data_i <- data[[i]]
     for(j in unique(data_i$kind)) {
         for(k in unique(data_i$type)) {
+            print(paste0(i, "_", j, "_", k, ".png"))
+
             # Select the relevant data
             idx <- data_i$kind == j & data_i$type == k
-            selected_data <- data_i[idx, ]
+            selected_data <- data_i[idx, ] %>% 
+                dplyr::ungroup()
 
             # Once you have these data, you can create a trajectory plot and save
             # it
             ggplot2::ggsave(
                 file.path("figures", "study 2", "tuning", paste0(i, "_", j, "_", k, ".png")),
                 trajectory(selected_data),
-                width = 10000,
-                height = 3000,
+                width = 3000,
+                height = 10000,
                 unit = "px"
             )
         }
@@ -499,7 +504,7 @@ summarized %>%
     View()
 
 # Choices made:
-#   - Span 5 seems best for the summary statistics
+#   - Span 2 seems best for the summary statistics
 #   - The "linear" and "quadratic" approximations have no advantage versus 
 #     over the LOESS, so those are left out
 #   - LOESS of the 4th degree seems to have decreased performance compared to 
