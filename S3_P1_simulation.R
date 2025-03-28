@@ -5,10 +5,8 @@
 #          in a realistic scenario.                                            #
 #                                                                              #
 #          Structure of the file is as follows:                                #
-#              L21-177:    Creating the functions necessary for simulation     #
-#              L183-295:   Simulating positions                                #
-#              L301-580:   Adding noise                                        #
-#              L587-717:   Visualization                                       #
+#              L18-150:    Simulating positions                                #
+#              L156-417:   Adding noise                                        #
 #                                                                              #
 #          Note that when adding noise, we add both time-independent noise     #
 #          and a time-dependent noise. We use the parameters estimated in the  #
