@@ -93,8 +93,8 @@ pipeline_efficiency <- function(data,
     # to, which is an overall better approach. Add an indicator that tells us 
     # that this is the original data    
     result <- data %>%
-        dplyr::mutate(X = x_original, 
-                      Y = y_original, 
+        dplyr::mutate(X = x_actual, 
+                      Y = y_actual, 
                       diff_x = x - X, 
                       diff_y = y - Y,
                       dist = sqrt((x - X)^2 + (y - Y)^2)) %>% 
@@ -127,7 +127,7 @@ pipeline_efficiency <- function(data,
     # depending only on an index of the pipeline to use in `fx`
     process <- function(i) {
         # Print something so that we know where the function is at
-        cat("\rExecuting pipeline", i, "of", length(fx))
+        cat("\rExecuting pipeline", i, "of", length(fx), "                    ")
 
         # Execute the pipeline for each of the nested data structures in `data`.
         # Then append the result to the existing dataframe to retain all needed 
@@ -159,8 +159,8 @@ pipeline_efficiency <- function(data,
         # Compute the summary statistics from the preprocessed 
         # data and save these results in a temporary file
         data <- data %>% 
-            dplyr::mutate(X = x_original, 
-                          Y = y_original, 
+            dplyr::mutate(X = x_actual, 
+                          Y = y_actual, 
                           diff_x = x - X,
                           diff_y = y - Y,
                           dist = sqrt((x - X)^2 + (y - Y)^2)) %>% 
