@@ -86,7 +86,7 @@ pipeline_efficiency <- function(data,
         dplyr::mutate(preprocessed = "before",
                       preprocessing_function = NA) %>% 
         add_metadata(metadata = metadata) %>% 
-        data.table::fwrite(file.path(path, "tmp_trajectory", "tmp0.csv"))
+        data.table::fwrite(file = file.path(path, "tmp_trajectory", "tmp0.csv"))
 
     # Compute the summary statistics of the data before they are processed 
     # through the pipeline. This will give us values to compare the results 
@@ -107,7 +107,7 @@ pipeline_efficiency <- function(data,
         suppressMessages()
 
     data.table::fwrite(result, 
-                       file.path(path, "tmp_summary", "tmp0.csv"))
+                       file = file.path(path, "tmp_summary", "tmp0.csv"))
 
 
 
@@ -152,9 +152,9 @@ pipeline_efficiency <- function(data,
             dplyr::mutate(preprocessed = "after", 
                           preprocessing_function = function_names[i]) %>% 
             add_metadata(metadata) %>% 
-            data.table::fwrite(file.path(path,
-                                         "tmp_trajectory", 
-                                         paste0("tmp", i, ".csv")))
+            data.table::fwrite(file = file.path(path,
+                                                "tmp_trajectory", 
+                                                paste0("tmp", i, ".csv")))
 
         # Compute the summary statistics from the preprocessed 
         # data and save these results in a temporary file
@@ -173,7 +173,7 @@ pipeline_efficiency <- function(data,
             suppressMessages()
 
         data.table::fwrite(data, 
-                           file.path(path, "tmp_summary", paste0("tmp", i, ".csv")))
+                           file = file.path(path, "tmp_summary", paste0("tmp", i, ".csv")))
 
         # Remove some of these variables and do garbage collection. Helps in 
         # memory maintenance        
@@ -198,12 +198,12 @@ pipeline_efficiency <- function(data,
     summary_statistics <- list()
     trajectories <- list()
     for(i in 0:length(fx)) {
-        summary_statistics[[i + 1]] <- data.table::fread(file.path(path, 
-                                                                   "tmp_summary", 
-                                                                   paste0("tmp", i, ".csv")))
-        trajectories[[i + 1]] <- data.table::fread(file.path(path, 
-                                                             "tmp_trajectory", 
-                                                             paste0("tmp", i, ".csv")))
+        summary_statistics[[i + 1]] <- data.table::fread(file = file.path(path, 
+                                                                          "tmp_summary", 
+                                                                          paste0("tmp", i, ".csv")))
+        trajectories[[i + 1]] <- data.table::fread(file = file.path(path, 
+                                                                    "tmp_trajectory", 
+                                                                    paste0("tmp", i, ".csv")))
     }
     
     summary_statistics <- do.call("rbind", summary_statistics) 
@@ -211,9 +211,9 @@ pipeline_efficiency <- function(data,
 
     # Save these results and delete the dataframes created here
     data.table::fwrite(summary_statistics, 
-                       file.path(path, paste0("summary_", filename, ".csv")))
+                       file = file.path(path, paste0("summary_", filename, ".csv")))
     data.table::fwrite(trajectories, 
-                       file.path(path, paste0("trajectory_", filename, ".csv")))
+                       file = file.path(path, paste0("trajectory_", filename, ".csv")))
 
     rm(list = c("data", "summary_statistics", "trajectories"))
     gc()
