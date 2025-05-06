@@ -25,51 +25,70 @@ devtools::load_all()
 setting <- predped::background(
     # Rectangular environment to move into
     shape = predped::rectangle(
-        center = c(5, 2.5),
-        size = c(10, 5)
+        center = c(10, 5),
+        size = c(20, 10)
     ),
 
     # Objects within the environment
     objects = list(
         predped::rectangle(
+            id = "table",
+            center = c(10, 5),
+            size = c(0.5, 0.5)
+        ),
+        predped::rectangle(
+            id = "tablet 1",
             center = c(2.1, 1.1),
-            size = c(0.2, 0.2)
+            size = c(0.1, 0.2),
+            orientation = pi/4
         ),
         predped::rectangle(
-            center = c(2.1, 2.5),
-            size = c(0.2, 0.2)
+            id = "tablet 2",
+            center = c(2.1, 5),
+            size = c(0.1, 0.2)
         ),
         predped::rectangle(
-            center = c(2.1, 3.9),
-            size = c(0.2, 0.2)
+            id = "tablet 3",
+            center = c(2.1, 8.9),
+            size = c(0.2, 0.1),
+            orientation = pi/4
         ),
         predped::rectangle(
-            center = c(7.9, 1.1),
-            size = c(0.2, 0.2)
+            id = "tablet 4",
+            center = c(7.4, 8.9),
+            size = c(0.2, 0.1)
         ),
         predped::rectangle(
-            center = c(7.9, 2.5),
-            size = c(0.2, 0.2)
+            id = "tablet 5",
+            center = c(12.6, 8.9),
+            size = c(0.2, 0.1)
         ),
         predped::rectangle(
-            center = c(7.9, 3.9),
-            size = c(0.2, 0.2)
+            id = "tablet 6",
+            center = c(17.9, 8.9),
+            size = c(0.1, 0.2),
+            orientation = pi/4
+        ),
+        predped::rectangle(,
+            id = "tablet 7",
+            center = c(17.9, 5),
+            size = c(0.1, 0.2)
         ),
         predped::rectangle(
-            center = c(4.2, 1.1),
-            size = c(0.2, 0.2)
+            id = "tablet 8",
+            center = c(17.9, 1.1),
+            size = c(0.2, 0.1),
+            orientation = pi/4
         ),
         predped::rectangle(
-            center = c(5.8, 1.1),
-            size = c(0.2, 0.2)
+            id = "tablet 9",
+            center = c(7.4, 1.1),
+            size = c(0.2, 0.1)
         ),
         predped::rectangle(
-            center = c(4.2, 3.9),
-            size = c(0.2, 0.2)
-        ),
-        predped::rectangle(
-            center = c(5.8, 3.9),
-            size = c(0.2, 0.2)
+            id = "tablet 10",
+            center = c(12.6, 1.1),
+            size = c(0.2, 0.1)
         )
     ),
 
@@ -85,6 +104,181 @@ model <- predped::predped(
     setting = setting, 
     archetypes = "BaselineEuropean"
 )
+
+# Create a list of goals that the agents will be assigned at each time. 
+goals <- list(
+    predped::goal(
+        id = "table 1", 
+        position = c(10, 5) + c(0, 0.55)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "table 2", 
+        position = c(10, 5) + c(0, -0.55)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "table 3", 
+        position = c(10, 5) + c(0.55, 0)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "table 4", 
+        position = c(10, 5) + c(-0.55, 0)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 1", 
+        position = c(2.1, 1.1) + c(0.15, 0.15)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 2", 
+        position = c(2.1, 5) + c(0.15, 0)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 3", 
+        position = c(2.1, 8.9) + c(0.15, -0.15)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 4", 
+        position = c(7.4, 8.9) + c(0, -0.15)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 5", 
+        position = c(12.6, 8.9) + c(0, -0.15)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 6", 
+        position = c(17.9, 8.9) + c(-0.15, -0.15)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 7", 
+        position = c(17.9, 5) + c(-0.15, 0)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 8", 
+        position = c(17.9, 1.1) + c(-0.15, 0.15)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 9", 
+        position = c(7.4, 1.1) + c(0, 0.15)/2,
+        counter = 10
+    ),
+    predped::goal(
+        id = "tablet 10", 
+        position = c(12.6, 1.1) + c(0, 0.15)/2,
+        counter = 10
+    )
+)
+
+# Visualize the background together with the goals within it.
+goals_xy <- t(sapply(goals, predped::position))
+predped::plot(setting, dark_mode = TRUE) +
+    ggplot2::annotate(
+        "point", 
+        x = goals_xy[, 1], 
+        y = goals_xy[, 2],
+        color = 'cornflowerblue'
+    )
+
+
+# Create a function that will handle the goals. At each time, we need to see 
+# which tablets are free and which ones aren't, updating a list containing free
+# an non-free goals. 
+#
+# As per the requirements of predped, this function takes in a state and returns 
+# another state.
+update_goals <- function(state) {
+    # Check at which iteration we currently are. If at the first iteration, we 
+    # need to change the goals of the agents and create some variables to 
+    # account for.
+    if(predped::iteration(state) == 0) {
+        # Create some variables that will help us with goal handling
+        goal_id <- sapply(goals, predped::id)
+        free_goals <- goal_id
+        goal_agent <- c()
+
+        # Loop over all agents and assign them their goals
+        agent_list <- predped::agents(state)
+        for(i in seq_along(agent_list)) {
+            # Remove all previously assigned goals
+            predped::goals(agent_list[[i]]) <- list()
+
+            # Change the current goal and make the agent plan their route
+            selected <- sample(free_goals, 1)
+            predped::current_goal(agent_list[[i]]) <- goals[goal_id == selected][[1]]
+            predped::status(agent_list[[i]]) <- "plan"
+
+            # Update the free_goals list 
+            free_goals <- free_goals[free_goals != selected]
+
+            # Update the goal_agent list
+            goal_agent[predped::id(agent_list[[i]])] <- selected
+        }
+
+    # If at any other iteration, we need to check whether any of the agents 
+    # currently has an exit goal. If so, we know that we need to assign them 
+    # a new goal.
+    } else {
+        # Extract the variables of interest
+        vars <- predped::variables(state)
+
+        goal_id <- vars[["goal_id"]]
+        free_goals <- vars[["free_goals"]]
+        goal_agent <- vars[["goal_agent"]]
+
+        # Find out whether any agents have an exit goal at this moment
+        agent_list <- predped::agents(state)
+
+        exiting <- sapply(agent_list, \(x) predped::id(predped::current_goal(x)))
+        exiting <- exiting == "goal exit"
+
+        # If no-one is exiting, then we don't need to do anything. If someone is 
+        # exiting, however, then we need to provide them with a new goal drawn
+        # from the goal list
+        if(any(exiting)) {
+            # Loop over all agents
+            for(i in seq_along(agent_list)) {
+                if(!exiting[i]) {
+                    next
+                }
+
+                # Sample one of the free goals
+                selected <- sample(free_goals, 1)
+                predped::current_goal(agent_list[[i]]) <- goals[goal_id == selected][[1]]
+                predped::status(agent_list[[i]]) <- "plan"
+
+                # Update the free_goals list: Delete the new goal and add the old
+                # one
+                free_goals <- c(
+                    free_goals[free_goals != selected],
+                    goal_agent[predped::id(agent_list[[i]])]
+                )
+
+                # Update the goal_agent list
+                goal_agent[predped::id(agent_list[[i]])] <- selected
+            }
+        }
+    }
+
+    # Update the agent list
+    predped::agents(state) <- agent_list
+
+    # Save the variables in the slot of the state
+    predped::variables(state)[["goal_id"]] <- goal_id 
+    predped::variables(state)[["free_goals"]] <- free_goals 
+    predped::variables(state)[["goal_agent"]] <- goal_agent
+
+    return(state)
+}
 
 # Simulate synthetic data. Some things to note here: 
 #   - Number of iterations is set to have about 15 minutes of simulation, i.e.
@@ -112,8 +306,11 @@ data <- parallel::mclapply(
             initial_number_agents = 10,
             max_agents = 10,
             iterations = 1800,
-            goal_number = 1000,
-            goal_duration = 10
+            fx = update_goals
+        )
+        saveRDS(
+            trace, 
+            file.path("data", "study 3", paste0("trace_", i, ".gif"))
         )
 
         # Save the GIF, allowing you to inspect the actual data
@@ -124,7 +321,7 @@ data <- parallel::mclapply(
         gifski::save_gif(
             lapply(plt, print),
             file.path("data", "study 3", paste0("data_", i, ".gif")),
-            delay = 1/10
+            delay = 1/15
         )
 
         # Transform to a dataset
@@ -209,7 +406,7 @@ data <- data %>%
 # Save the data
 data.table::fwrite(
     data, 
-    file.path("data", "study 2", "data_R10.csv")
+    file.path("data", "study 3", "data_R10.csv")
 )
 
 
