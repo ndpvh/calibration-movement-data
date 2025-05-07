@@ -293,8 +293,7 @@ update_goals <- function(state) {
 set.seed(74327) # Knowing That You've Arrived - Tides of Man
 seeds <- sample(1:10000, 100)
 
-n_cores <- parallel::detectCores()
-data <- parallel::mclapply(
+data <- lapply(
     seq_along(seeds), 
     function(i) {
         print(i)
@@ -335,8 +334,7 @@ data <- parallel::mclapply(
             )
 
         return(data)
-    },
-    mc.cores = n_cores - 1
+    }
 )
 data <- do.call("rbind", data)
 

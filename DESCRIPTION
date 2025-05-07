@@ -40,5 +40,5 @@ Suggests:
     fs,
     testthat (>= 3.0.0)
 Remotes:
-    ndpvh/predped
+    ndpvh/calibration-of-movement
 Config/testthat/edition: 3
