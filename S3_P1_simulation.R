@@ -305,11 +305,12 @@ data <- lapply(
             initial_number_agents = 10,
             max_agents = 10,
             iterations = 1800,
-            fx = update_goals
+            fx = update_goals,
+            print_iteration = TRUE
         )
         saveRDS(
             trace, 
-            file.path("data", "study 3", paste0("trace_", i, ".gif"))
+            file.path("data", "study 3", paste0("trace_", i, ".Rds"))
         )
 
         # Save the GIF, allowing you to inspect the actual data
