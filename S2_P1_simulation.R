@@ -721,6 +721,3 @@ ggplot2::ggsave(
     height = 3800,
     unit = "px"
 )
-
-
-
