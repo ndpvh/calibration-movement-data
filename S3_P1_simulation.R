@@ -498,10 +498,11 @@ data.table::fwrite(
 # data in Study 2.
 #
 # Create the two functions needed for this
-random_missing <- function(x) {
+random_missing <- function(x, 
+                           N = round(0.3 * nrow(x))) {
     idx <- sample(
         seq_len(nrow(x)), 
-        round(0.7 * nrow(x))
+        N
     )
 
     x[idx, c("x", "y")] <- NA 
@@ -568,7 +569,7 @@ nonrandom_missing <- function(x) {
     # Now sample the remaining time points to be deleted from the remaining data 
     # points
     x <- x %>% 
-        random_missing()
+        random_missing(N = round(0.3 * N) - (N - nrow(x)))
 
     return(x)
 }
@@ -587,7 +588,12 @@ for(i in seq_along(filenames)) {
     # Random missing
     tmp <- data %>% 
         dplyr::group_by(nsim) %>% 
-        random_missing() %>% 
+        tidyr::nest() %>%
+        dplyr::mutate(data = data %>%
+            as.data.frame() %>%
+            random_missing() %>%
+            list()) %>%
+        tidyr::unnest(data) %>%
         dplyr::filter(!is.na(x))
 
     data.table::fwrite(
@@ -611,3 +617,12 @@ for(i in seq_along(filenames)) {
         file.path("data", "study 3", paste0(filenames[i], "6N.csv"))
     )
 }
+
+# Check whether everything is in order
+ext <- "R6R"
+data.table::fread(file.path("data", "study 3", paste0("data_", ext, ".csv"))) %>%
+    dplyr::group_by(nsim) %>%
+    tidyr::nest() %>%
+    dplyr::mutate(N = nrow(data[[1]])) %>%
+    dplyr::select(-data) %>%
+    View()
