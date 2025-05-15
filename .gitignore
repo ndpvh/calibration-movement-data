@@ -21,7 +21,11 @@ diana*
 .vscode/
 
 data/
-results/
+results/simulation*
+results/stationary
+
+results/study*/tmp*
+results/study*/trajectory*
 
 */dynamic_filter.*
 */*/*dynamic_filter.*
