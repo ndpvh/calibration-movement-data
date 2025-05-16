@@ -166,5 +166,5 @@ for(i in statistics) {
 View(results)
 data.table::fwrite(
     results, 
-    file.path(".", "results", "study 2", "selected_pipelines.csv")
+    file.path(".", "results", "study 2", "selected_filters.csv")
 )
