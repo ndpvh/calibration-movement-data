@@ -14,8 +14,15 @@ average <- function(data,
 
     # Do the same for any other variable that is asked for
     if(!is.null(cols)) {
+        N <- nrow(data)
+        if(N %% 2 == 0) {
+            idx <- c(N/2, N/2 + 1)
+        } else {
+            idx <- ceiling(N/2)
+        }
+
         for(i in cols) {
-            result[,i] <- mean(data[,i])
+            result[,i] <- mean(data[idx ,i])
         }
     }
 
@@ -60,8 +67,9 @@ weighted_average <- function(data,
 
     # If the weighted means should be computed for other columns, do so
     if(!is.null(cols)) {
+        idx <- data[, .by] == 0
         for(i in cols) {
-            result[,i] <- sum(data[,i] * weights)
+            result[,i] <- mean(data[idx ,i])
         }
     }
 
