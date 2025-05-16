@@ -22,7 +22,7 @@ library(locfit)
 # Parallellization
 #-------------------------------------------------------------------------------
 
-n_cores <- 30 #max(c(parallel::detectCores() - 1, 1))
+n_cores <- 11 #max(c(parallel::detectCores() - 1, 1))
 
 
 
@@ -94,7 +94,7 @@ mw <- list(
         x, 
         .by = "relative_time", 
         weights = \(x) dnorm(x, mean = 0, sd = 1/10),
-        cols = c("x_original", "y_original")
+        cols = c("x_actual", "y_actual")
     )
 ) %>% 
     lapply(
