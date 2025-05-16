@@ -76,7 +76,7 @@ selected <- selection$preprocessing_function[selection$total]
 filters <- filters[selected]
 
 saveRDS(
-    pipelines, 
+    filters, 
     file.path("results", "study 3", "filters.Rds")
 )
 
