@@ -149,7 +149,7 @@ for(i in statistics) {
         dplyr::rowwise() %>% 
         dplyr::mutate(
             selected = sum(dplyr::across(R10:T6N)) / 6,
-            selected = selected >= 1/2
+            selected = selected >= 2/3
         ) %>% 
         dplyr::ungroup() %>% 
         dplyr::select(preprocessing_function, selected)
