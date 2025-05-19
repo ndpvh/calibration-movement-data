@@ -190,8 +190,10 @@ spiral <- function(N, p) {
 #   - For the movement data, partitions `p` are taken to be {20, 40, 80}
 #   - For the fixed data, just coordinates placed on 9 locations within a 2 x 2 
 #     square and repeated for the duration of the experiment
-#   - The time variable is created such that the data was sampled at a 10Hz rate
-#     (i.e., data were collected for about 10sec)
+#   - The time variable is created such that the data was sampled at a 2Hz rate
+#     (i.e., data were collected for about 50sec), which is the same rate at 
+#     which the second simulation will be sampled (allowing for easy transfer 
+#     between the different simulations)
 #   - We repeat these same data 100 times, allowing us to aggregate across 
 #     different instantiations of simulated measurement error (allowing greater
 #     generality)
@@ -216,7 +218,7 @@ data <- lapply(
                 # Generate the data
                 tmp <- fx[[name]](p) %>% 
                     dplyr::mutate(
-                        time = (dplyr::row_number() - 1) / 10,
+                        time = (dplyr::row_number() - 1) / 2,
                         id = paste0(name, "_", p)
                     )
 
@@ -276,7 +278,7 @@ data <- data.frame(
 ) %>% 
     dplyr::mutate(id = rep(paste0("fixed_", 1:9), each = N)) %>% 
     dplyr::group_by(id) %>% 
-    dplyr::mutate(time = (dplyr::row_number() - 1) / 7) %>% 
+    dplyr::mutate(time = (dplyr::row_number() - 1) / 2) %>% 
     dplyr::ungroup()
 
 # Same repeat will be used here

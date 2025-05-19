@@ -47,6 +47,7 @@ data <- do.call("rbind", data_list)
 # Define all of the filters to be used. Done in two steps. First, we define the
 # Kalman filter and LOESS/LOWESS. Only then do we define the different moving 
 # windows.
+dt <- 1/2 # Sampling rate
 filters <- list(
     # Use the variance as found in Study 1
     "kalm" = list(
@@ -107,12 +108,13 @@ fx <- list(
     "idx" = \(x) nameless::weighted_average(
         x, 
         .by = "index", 
-        cols = c("x_actual", "y_actual")
+        cols = c("x_actual", "y_actual"),
+        weights = \(x) dnorm(x, mean = 0, sd = 1)
     ),
     "time" = \(x) nameless::weighted_average(
         x, 
         .by = "relative_time", 
-        weights = \(x) dnorm(x, mean = 0, sd = 1/10), 
+        weights = \(x) dnorm(x, mean = 0, sd = dt), 
         cols = c("x_actual", "y_actual")
     ),
 

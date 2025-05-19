@@ -93,16 +93,19 @@ mw <- list(
     \(x) nameless::weighted_average(
         x, 
         .by = "relative_time", 
-        weights = \(x) dnorm(x, mean = 0, sd = 1/10),
+        weights = \(x) dnorm(x, mean = 0, sd = 1/2),
         cols = c("x_actual", "y_actual")
     )
 ) %>% 
     lapply(
         function(x) {
-            factory <- \(y) nameless::moving_window(y, 
-                                                    span = 1, 
-                                                    fx = x,
-                                                    .by = "id")
+            factory <- \(y) nameless::moving_window(
+                y, 
+                span = 1, 
+                fx = x,
+                .by = "id"
+            )
+            
             return(factory)
         }
     ) %>% 
