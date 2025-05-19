@@ -112,7 +112,7 @@ for(i in seq_along(data_files)) {
         filters, 
         .by = "nsim", 
         summary.by = "id",
-        path = file.path(".", "results", "study 3"),
+        path = file.path("results", "study 3"),
         filename = data_files[i], 
         metadata = list("filename" = data_files[i]), 
         n_cores = n_cores
