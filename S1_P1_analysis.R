@@ -194,10 +194,10 @@ dist <- lapply(
         dplyr::mutate(dist = sqrt((x - X)^2 + (y - Y)^2)) %>% 
         dplyr::summarize(
             study = names(data_list)[i],
-            mean = mean(dist),
-            sd = sd(dist),
-            q025 = quantile(dist, probs = c(0.025)),
-            q975 = quantile(dist, probs = c(0.975))
+            mean = mean(dist, na.rm = TRUE),
+            sd = sd(dist, na.rm = TRUE),
+            q025 = quantile(dist, probs = c(0.025), na.rm = TRUE),
+            q975 = quantile(dist, probs = c(0.975), na.rm = TRUE)
         )
 )
 dist <- do.call("rbind", dist)
@@ -282,14 +282,14 @@ plots <- lapply(
     seq_along(data_list), 
     \(i) bias_plot(
         data_list[[i]],
-        names(data_list)[i]
+        paste0("Day ", i)
     )
 )
 plots <- append(
     list(
         ggpubr::ggarrange(
-            nameless::name_plot("X", size = 17),
-            nameless::name_plot("Y", size = 17),
+            nameless::name_plot("x", size = 17),
+            nameless::name_plot("y", size = 17),
             ncol = 1
         )
     ),
@@ -449,7 +449,7 @@ bic <- function(x, ...) {
     # Compute the polynomial
     result <- polynomial(x, ...)
 
-    # Compute and return the AIC
+    # Compute and return the BIC
     k <- length(result$B)
     n <- nrow(x)
 
@@ -467,7 +467,7 @@ cross_validation <- function(x, ...) {
     iter <- length(tags)
 
     # Loop over each of the iterations
-    MAD <- numeric(iter)
+    d <- numeric(iter)
     for(i in 1:iter) {
         # Get all non-NA indices to be used in this iteration
         idy <- which(x$tag == tags[i])
@@ -477,7 +477,7 @@ cross_validation <- function(x, ...) {
         params <- polynomial(data_i, ...)
 
         if(is.na(params$SSE)) {
-            MAD[i] <- NA
+            d[i] <- NA
             next
         }
 
@@ -489,17 +489,17 @@ cross_validation <- function(x, ...) {
         # Compute the MSE for this iteration
         B <- params$B 
         Y_hat <- X %*% B 
-        MAD[i] <- mean((Y[,1] - Y_hat[,1])^2 + (Y[,2] - Y_hat[,2])^2)
+        d[i] <- mean(sqrt((Y[,1] - Y_hat[,1])^2 + (Y[,2] - Y_hat[,2])^2))
     }
 
     # Return the mean MSE across all iterations as the metric for fit
-    return(mean(MAD, na.rm = TRUE))
+    return(mean(d, na.rm = TRUE))
 }
 
 # With all necessary functions defined, loop over all data-files and all 
 # polynomial degrees of interest and compute AICs and MSEs from the 
 # cross-validation
-studies <- unique(dist$day)
+studies <- unique(dist$study)
 degrees <- 1:15
 
 set.seed(10) # Retrograde - Silverstein
@@ -512,14 +512,14 @@ result <- lapply(
         data_x <- all_data[all_data$day == x, ]
 
         # Perform aic and cross-validation for each of the degrees of interest
-        AIC <- BIC <- MAD <- numeric(length(degrees) * 2)
+        AIC <- BIC <- d <- numeric(length(degrees) * 2)
         f <- 1
         for(i in degrees) {
             print(i)
             for(j in c(TRUE, FALSE)) {
                 AIC[f] <- aic(data_x, i, j)
                 BIC[f] <- bic(data_x, i, j)
-                MAD[f] <- cross_validation(data_x, i, j)
+                d[f] <- cross_validation(data_x, i, j)
                 f <- f + 1
             }
         }
@@ -530,7 +530,7 @@ result <- lapply(
             interaction = rep(c(TRUE, FALSE), times = length(degrees)), 
             aic = AIC, 
             bic = BIC,
-            mad = MAD
+            d = d
         ) 
         result$day <- x 
 
@@ -550,7 +550,7 @@ result <- rbind(
             interaction = interaction[1],
             aic = mean(aic, na.rm = TRUE),
             bic = mean(bic, na.rm = TRUE),
-            mad = mean(mad, na.rm = TRUE)
+            d = mean(d, na.rm = TRUE)
         ) %>% 
         dplyr::ungroup()
 )
@@ -561,8 +561,8 @@ data.table::fwrite(
 
 # Visualize the results through a line plot for AIC and CV
 combos <- data.frame(
-    rep(c("aic", "mad"), times = 2),
-    rep(c(FALSE, TRUE), each = 2)
+    rep(c("aic", "bic", "d"), times = 2),
+    rep(c(FALSE, TRUE), each = 3)
 )
 
 plots <- lapply(
@@ -577,18 +577,31 @@ plots <- lapply(
                                            "21-10-2023" = "salmon",
                                            "22-12-2023" = "goldenrod",
                                            "16-11-2024" = "darkolivegreen4",
-                                           "average" = "black")) +
+                                           "average" = "black"),
+                                labels = c("14-10-2023" = 1, 
+                                           "21-10-2023" = 2,
+                                           "22-12-2023" = 3,
+                                           "16-11-2024" = 4,
+                                           "average" = "average")) +
     ggplot2::scale_y_continuous(labels = \(x) scales::scientific(x, digits = 1)) +
-    ggplot2::labs(x = ifelse(combos[i, 2], "Degree of the polynomial", " "),
-                  y = ifelse(combos[i, 1] == "aic", "AIC", "MAD"),
+    ggplot2::labs(x = ifelse(combos[i, 2], "Degree", " "),
+                  y = "",
                   title = ifelse(
-                      !combos[i, 2], 
-                      ifelse(combos[i, 1] == "aic", "Fit", "Cross-validation"), 
-                      " "
+                    i %in% 4:6, 
+                    "",
+                    ifelse(
+                      combos[i, 1] == "aic", 
+                      "AIC", 
+                      ifelse(
+                          combos[i, 1] == "bic", 
+                          "BIC", 
+                          "d"
+                      )
+                    )
                   ),
                   color = "Day") +
     ggplot2::theme_minimal() +
-    ggplot2::theme(plot.title = ggplot2::element_text(size = 45,
+    ggplot2::theme(plot.title = ggplot2::element_text(size = 55,
                                                       hjust = 0.5),
                    axis.title = ggplot2::element_text(size = 35),
                    axis.text = ggplot2::element_text(size = 25), 
@@ -602,28 +615,28 @@ ggplot2::ggsave(
     file.path("figures", "study 1", "systematic error, polynomial degree comparison.png"),
     ggpubr::ggarrange(
         ggpubr::ggarrange(
-            nameless::name_plot("Main", size = 20),
+            nameless::name_plot("No interaction", size = 20),
             nameless::name_plot("Interaction", size = 20),
             ncol = 1
         ),
         ggpubr::ggarrange(
             plotlist = plots,
             nrow = 2,
-            ncol = 2,
+            ncol = 3,
             common.legend = TRUE,
             legend = "right",
-            widths = c(0.505, 0.495)
+            widths = c(0.505, 0.495, 0.495)
         ),
         nrow = 1,
         widths = c(1/6, 5/6)
     ),
-    width = 2300 * 3,
+    width = 3100 * 3,
     height = 1500 * 3,
     unit = "px"
 )
 
 # Result:
-#   - AIC does not show sufficient punishing for more complex models and is 
+#   - AIC/BIC do not show sufficient punishing for more complex models and are 
 #     therefore discarded
 #   - Cross-validation shows the best fit across days for the polynomial of 
 #     degree 9 and without interaction effects. This one is selected for the 
@@ -636,7 +649,7 @@ ggplot2::ggsave(
 # Let's check whether this works. 
 correct <- function(x) {
     # Estimate a polynomial of the 9th degree
-    params <- polynomial(x, 9)
+    params <- polynomial(x, 9, FALSE)
 
     # Retrieve the independent variables X and the parameters B
     X <- params$X 
@@ -688,7 +701,7 @@ names(corrected_data) <- names(data_list)
 # method. For this, we use a nonparametric bootstrapping procedure, bootstrapping
 # the mean distance of the measured/corrected position vs the real position.
 # We do this for each of the datasets separately.
-studies <- unique(dist$day)
+studies <- unique(dist$study)
 x_group <- unique(dist$x_group)
 y_group <- unique(dist$y_group)
 results <- matrix(
@@ -742,11 +755,11 @@ for(i in seq_along(studies)) {
     uncorrected <- corrected <- difference <- numeric(N)
     for(j in seq_len(N)) {
         idx <- bootstrapped[, j]
-        uncorrected[j] <- dist$dist[idx] %>% 
+        uncorrected[j] <- data_i$dist[idx] %>% 
             mean()
-        corrected[j] <- dist$dist_cor[idx] %>% 
+        corrected[j] <- data_i$dist_cor[idx] %>% 
             mean()
-        difference[j] <- (dist$dist[idx] - dist$dist_cor[idx]) %>% 
+        difference[j] <- (data_i$dist[idx] - data_i$dist_cor[idx]) %>% 
             mean()
     }
 
@@ -833,9 +846,11 @@ for(i in seq_along(studies)) {
     # results[[studies[i]]] <- tmp
 }
 
-results <- as.data.frame(results) %>% 
+results <- cbind(studies, results) %>% 
+    as.data.frame() %>% 
     setNames(
         c(
+            "study",
             "m_uncorrected",
             "q025_uncorrected",
             "q975_uncorrected",
@@ -846,9 +861,13 @@ results <- as.data.frame(results) %>%
             "q025_difference",
             "q975_difference"
         )
-    )
+    ) 
 results$significance <- (results$q025_difference > 0) | (results$q975_difference < 0)
-results$full_ridance <- (results$q025_difference < 0) & (results$q975_difference > 0)
+
+data.table::fwrite(
+    results,
+    file.path("results", "study 1", "systematic error, reduction.csv")
+)
 
 # Significant reduction in the systematic error, but no riddance yet. Instead of
 # an (unsigned) bias of around 24cm, we reduce the (unsigned) bias to around 
@@ -858,6 +877,36 @@ results$full_ridance <- (results$q025_difference < 0) & (results$q975_difference
 # TO DO: Check whether relationship to x_group and y_group. A bit more difficult
 #        to achieve with the bootstrap, so maybe real ANOVA?
 
+
+
+# Finally, get some descriptives for the corrected and uncorrected data with 
+# regard to their distance from the actual positions.
+systematic <- lapply(
+    seq_along(studies), 
+    \(i) corrected_data[[studies[i]]] %>% 
+        dplyr::rename(study = day) %>% 
+        dplyr::group_by(study) %>% 
+        dplyr::summarize(
+            mean_raw = mean(dist, na.rm = TRUE),
+            sd_raw = sd(dist, na.rm = TRUE),
+            q025_raw = quantile(dist, prob = 0.025, na.rm = TRUE),
+            q975_raw = quantile(dist, prob = 0.975, na.rm = TRUE),
+            mean_cor = mean(dist_cor, na.rm = TRUE),
+            sd_cor = sd(dist_cor, na.rm = TRUE),
+            q025_cor = quantile(dist_cor, prob = 0.025, na.rm = TRUE),
+            q975_cor = quantile(dist_cor, prob = 0.975, na.rm = TRUE),
+            x_group = x_group[1], 
+            y_group = y_group[1]
+        ) %>% 
+        dplyr::ungroup() %>% 
+        return()
+)
+systematic <- do.call("rbind", systematic) 
+
+data.table::fwrite(
+    systematic,
+    file.path("results", "study 1", "systematic error, descriptives.csv")
+)
 
 
 # Visualization ################################################################
@@ -873,7 +922,7 @@ plots <- lapply(
         return(
             bias_plot(
                 tmp,
-                studies[i]
+                paste0("Day", i)
             )
         )
     }
@@ -881,8 +930,8 @@ plots <- lapply(
 plots <- append(
     list(
         ggpubr::ggarrange(
-            nameless::name_plot("X", size = 17),
-            nameless::name_plot("Y", size = 17),
+            nameless::name_plot("x", size = 17),
+            nameless::name_plot("y", size = 17),
             ncol = 1
         )
     ),
