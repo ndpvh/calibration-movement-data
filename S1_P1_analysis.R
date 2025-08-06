@@ -1190,20 +1190,18 @@ for(i in seq_along(data_list)){
     # Create summary statistics for each of the covariances, and more specifically 
     # given quantiles of the bootstrapped distribution. This should give us an 
     # idea of how badly off we are.
-    #
-    # Here, we use a 99% CI, just to be sure
     results[[names(data_list)[i]]] <- covariances %>% 
         # Summarize the different variables into CI and mean
         dplyr::summarize(
-            lb_var_x = quantile(var_x, 0.005), 
-            lb_var_y = quantile(var_y, 0.005),
-            lb_cov_xy = quantile(cov_xy, 0.005), 
+            lb_var_x = quantile(var_x, 0.025), 
+            lb_var_y = quantile(var_y, 0.025),
+            lb_cov_xy = quantile(cov_xy, 0.025), 
             m_var_x = mean(var_x), 
             m_var_y = mean(var_y), 
             m_cov_xy = mean(cov_xy), 
-            ub_var_x = quantile(var_x, 0.995), 
-            ub_var_y = quantile(var_y, 0.995),
-            ub_cov_xy = quantile(cov_xy, 0.995)
+            ub_var_x = quantile(var_x, 0.975), 
+            ub_var_y = quantile(var_y, 0.975),
+            ub_cov_xy = quantile(cov_xy, 0.975)
         ) %>% 
         # Restructure the dataframe to be more useful: Put each of the 
         # covariances as a row, and the lower bounds, mean, and upper bounds 
@@ -1494,9 +1492,27 @@ corrs <- lapply(
             ) %>% 
                 unlist()
         ) %>% 
-        dplyr::select(-data)
+        dplyr::select(-data) %>% 
+        dplyr::ungroup()
 )
 names(corrs) <- names(data_list)
+
+descriptive <- lapply(
+    corrs, 
+    \(x) x %>% 
+        dplyr::summarize(
+            mean = mean(c(auto_x, auto_y), na.rm = TRUE), 
+            sd = sd(c(auto_x, auto_y), na.rm = TRUE), 
+            q025 = quantile(c(auto_x, auto_y), probs = 0.025, na.rm = TRUE), 
+            q975 = quantile(c(auto_x, auto_y), probs = 0.975, na.rm =TRUE)
+        )
+) 
+descriptive <- do.call("rbind", descriptive) %>% 
+    dplyr::mutate(
+        day = names(corrs)
+    )
+
+View(descriptive)
 
 # Visualize this autocorrelation
 plots <- lapply(
@@ -1589,8 +1605,8 @@ ggplot2::ggsave(
 # Let's create a function to estimate the parameters of the VAR(1)
 autoregression <- function(x) {
     # Return all NAs if not enough data is provided
-    if(nrow(x) < 11) {
-        return(rep(NA, 10))
+    if(nrow(x) < 9) {
+        return(rep(NA, 8))
     }
 
     # Arrange the variables according to time
@@ -1611,11 +1627,10 @@ autoregression <- function(x) {
     X <- x %>% 
         dplyr::mutate(
             x = ifelse(time == max(time), NA, x), 
-            y = ifelse(time == max(time), NA, y),
-            intercept = 1
+            y = ifelse(time == max(time), NA, y)
         ) %>% 
         dplyr::filter(!is.na(x)) %>% 
-        dplyr::select(intercept, x, y) %>% 
+        dplyr::select(x, y) %>% 
         as.matrix()
 
     # Do least-squares
@@ -1634,51 +1649,148 @@ autoregression <- function(x) {
     )
 }
 
-# Apply the function to each of the data sets
-results <- lapply(
-    data_list, 
-    \(x) x %>% 
+# Create a function for bootstrapping the autoregression. Note that we first 
+# estimate the VAR(1) for each tag separately and then sample among all estimates, 
+# computing the mean across tags. This will serve as our estimate of the 
+# autoregressive parameters.
+bootstrapped_autoregression <- function(x, 
+                                        iterations,
+                                        vectorized_iterations = 100) {
+
+    # Estimate the parameters of the VAR per tag
+    dims <- c("_x", "_yx", "_xy", "_y")
+    params <- x %>% 
         dplyr::group_by(experiment, tag) %>% 
+        tidyr::nest() %>% 
         dplyr::mutate(
-            x = x - mean(x),
-            y = y - mean(y)
-        ) %>% 
-        dplyr::summarize(
-            experiment = experiment[1], 
-            tag = tag[1],
-            data = cbind(x, y, time) %>% 
-                as.data.frame() %>% 
-                setNames(c("x", "y", "time")) %>% 
+            data = data[[1]] %>% 
                 autoregression() %>% 
                 matrix(nrow = 1) %>% 
-                as.data.frame()
+                as.data.frame() %>% 
+                setNames(
+                    c(
+                        paste0("auto", dims),
+                        paste0("sigma", dims)
+                    )
+                ) %>% 
+                list()
         ) %>% 
         tidyr::unnest(data) %>% 
         dplyr::ungroup() %>% 
-        setNames(
-            c(
-                "experiment", 
-                "tag", 
-                paste0("intercept", c("_x", "_y")),
-                paste0("auto", c("_x", "_yx", "_xy", "_y")),
-                paste0("sigma", c("_x", "_yx", "_xy", "_y"))
-            )
-        )
-)
+        dplyr::select(-experiment, -tag)
 
-# Get the 99%CI for each of the parameters, providing us with some type of idea
-# of what to account for
-results <- do.call("rbind", results) %>% 
-    dplyr::select(intercept_x:sigma_y) %>% 
-    as.matrix() %>% 
-    matrixStats::colQuantiles(
-        probs = c(0.005, 0.5, 0.995),
-        na.rm = TRUE
+    # Get the number of estimated parameters. Needed to ensure that each of the 
+    # samples has an equal size to the actual data
+    N <- nrow(params)
+
+    # Determine how many times you will have to run the `vectorized_iterations` 
+    # to attain the `iterations`
+    whole_number <- floor(iterations / vectorized_iterations) 
+    iters <- c(
+        rep(vectorized_iterations, each = whole_number), 
+        iterations %% vectorized_iterations
     )
 
-saveRDS(
+    # Remove iterations that are equal to 0 (only the case if 
+    # vectorized_iterations) is a diviser of iterations
+    iters <- iters[iters != 0]
+
+    # Do a mix of vectorized and unvectorized bootstrapping to spare your system's 
+    # memory.
+    results <- list() ; f <- 1
+    for(i in seq_along(iters)) {
+        # Sample a number of indices for x that is equal to the sample size times 
+        # the number of samples one wants to draw
+        idx <- sample(
+            1:N, 
+            N * iters[i], 
+            replace = TRUE
+        )
+
+        # Extend the dataframe to account for these values and bind them with an 
+        # identity number that conveys the sample they are in and compute the 
+        # means of the parameters for this sample
+        results[[i]] <- params[idx,] %>% 
+            dplyr::mutate(sample_id = rep(f:(f + iters[i] - 1), each = N)) %>% 
+            dplyr::group_by(sample_id) %>% 
+            tidyr::nest() %>% 
+            dplyr::mutate(
+                data = data[[1]] %>% 
+                    dplyr::summarize(
+                        auto_x = mean(auto_x, na.rm = TRUE),
+                        auto_yx = mean(auto_yx, na.rm = TRUE),
+                        auto_xy = mean(auto_xy, na.rm = TRUE),
+                        auto_y = mean(auto_y, na.rm = TRUE),
+                        sigma_x = mean(sigma_x, na.rm = TRUE),
+                        sigma_y = mean(sigma_y, na.rm = TRUE),
+                        sigma_xy = mean(sigma_yx, na.rm = TRUE)
+                    ) %>% 
+                    list()
+            ) %>% 
+            tidyr::unnest(data) %>% 
+            dplyr::ungroup()
+
+        f <- f + iters[i]
+    } 
+
+    return(do.call("rbind", results))
+}
+
+# Apply the bootstrapped autoregression to the data
+set.seed(165375) # A Waking Dream the Longest Curse - Triangle Fight
+results <- lapply(
+    data_list, 
+    \(x) bootstrapped_autoregression(x, 10000, 1000)
+)
+
+# Get summary statistics of interest for the mean parameter values
+results <- lapply(
+    seq_along(data_list),
+    \(i) results[[i]] %>% 
+        dplyr::mutate(day = names(data_list)[i])
+)
+results <- do.call("rbind", results) %>% 
+    dplyr::group_by(day) %>% 
+    dplyr::summarize(
+        mean_auto_x = mean(auto_x, na.rm = TRUE),
+        sd_auto_x = sd(auto_x, na.rm = TRUE),
+        q025_auto_x = quantile(auto_x, prob = 0.025, na.rm = TRUE),
+        q975_auto_x = quantile(auto_x, prob = 0.975, na.rm = TRUE),
+
+        mean_auto_yx = mean(auto_yx, na.rm = TRUE),
+        sd_auto_yx = sd(auto_yx, na.rm = TRUE),
+        q025_auto_yx = quantile(auto_yx, prob = 0.025, na.rm = TRUE),
+        q975_auto_yx = quantile(auto_yx, prob = 0.975, na.rm = TRUE),
+
+        mean_auto_xy = mean(auto_xy, na.rm = TRUE),
+        sd_auto_xy = sd(auto_xy, na.rm = TRUE),
+        q025_auto_xy = quantile(auto_xy, prob = 0.025, na.rm = TRUE),
+        q975_auto_xy = quantile(auto_xy, prob = 0.975, na.rm = TRUE),
+
+        mean_auto_y = mean(auto_y, na.rm = TRUE),
+        sd_auto_y = sd(auto_y, na.rm = TRUE),
+        q025_auto_y = quantile(auto_y, prob = 0.025, na.rm = TRUE),
+        q975_auto_y = quantile(auto_y, prob = 0.975, na.rm = TRUE),
+
+        mean_sigma_x = mean(sigma_x, na.rm = TRUE),
+        sd_sigma_x = sd(sigma_x, na.rm = TRUE),
+        q025_sigma_x = quantile(sigma_x, prob = 0.025, na.rm = TRUE),
+        q975_sigma_x = quantile(sigma_x, prob = 0.975, na.rm = TRUE),
+
+        mean_sigma_y = mean(sigma_y, na.rm = TRUE),
+        sd_sigma_y = sd(sigma_y, na.rm = TRUE),
+        q025_sigma_y = quantile(sigma_y, prob = 0.025, na.rm = TRUE),
+        q975_sigma_y = quantile(sigma_y, prob = 0.975, na.rm = TRUE),
+
+        mean_sigma_xy = mean(sigma_xy, na.rm = TRUE),
+        sd_sigma_xy = sd(sigma_xy, na.rm = TRUE),
+        q025_sigma_xy = quantile(sigma_xy, prob = 0.025, na.rm = TRUE),
+        q975_sigma_xy = quantile(sigma_xy, prob = 0.975, na.rm = TRUE)
+    )
+
+data.table::fwrite(
     results, 
-    file.path("results", "study 1", "unsystematic error, autoregression parameters.Rds")
+    file.path("results", "study 1", "unsystematic error, autoregression parameters.csv")
 )
 
 
@@ -1734,7 +1846,7 @@ results %>%
     dplyr::group_by(day) %>% 
     dplyr::summarize(
         mean = mean(Hz, na.rm = TRUE),
-        var = var(Hz, na.rm = TRUE), 
+        sd = sd(Hz, na.rm = TRUE), 
         q025 = quantile(Hz, 0.025, na.rm = TRUE),
         q975 = quantile(Hz, 0.975, na.rm = TRUE),
         min = min(Hz, na.rm = TRUE), 
