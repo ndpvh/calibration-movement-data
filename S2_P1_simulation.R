@@ -232,8 +232,8 @@ data <- lapply(
                             NA, 
                             sqrt((x[2:N] - x[2:N - 1])^2 + (y[2:N] - y[2:N - 1])^2)
                         ),
-                        x = 0.14 * x / mean(distance, na.rm = TRUE), 
-                        y = 0.14 * y / mean(distance, na.rm = TRUE)
+                        x = 0.7 * x / mean(distance, na.rm = TRUE), 
+                        y = 0.7 * y / mean(distance, na.rm = TRUE)
                     ) %>% 
                     dplyr::select(x, y, time, id)
 
