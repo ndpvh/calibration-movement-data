@@ -15,6 +15,9 @@
 #' @param x Numeric vector of test values.
 #' @param y Numeric vector of reference values.
 #' @param alpha Numeric denoting the signficance level.
+#' @param bootstrapped Integer denoting the number of samples to have in a 
+#' bootstrap. If not defined, confidencen intervals will be selected based on raw
+#' difference scores. Defaults to \code{NA}
 #' 
 #' @return Single-rowed data.frame containing the separate confidence intervals 
 #' for \code{x} and \code{y}, as well as the confidence interval for the difference 
@@ -24,9 +27,20 @@
 #' @export
 compare_distribution <- function(x, 
                                  y,
-                                 alpha = 0.05) {
+                                 alpha = 0.05,
+                                 bootstrapped = NA) {
     
     bounds <- c(alpha/2, 0.5, 1 - alpha/2)
+
+    if(!is.na(bootstrapped)) {
+        N <- length(x)
+
+        idx <- sample(1:N, N * bootstrapped, replace = TRUE) %>% 
+            matrix(nrow = N, ncol = bootstrapped)
+
+        x <- colMeans(x[idx])
+        y <- colMeans(y[idx])
+    }
 
     ci_x <- quantile(x, probs = bounds)
     ci_y <- quantile(y, probs = bounds)
