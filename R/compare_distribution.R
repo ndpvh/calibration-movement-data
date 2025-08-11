@@ -35,11 +35,14 @@ compare_distribution <- function(x,
     if(!is.na(bootstrapped)) {
         N <- length(x)
 
-        idx <- sample(1:N, N * bootstrapped, replace = TRUE) %>% 
-            matrix(nrow = N, ncol = bootstrapped)
+        idx <- sample(1:N, N * bootstrapped, replace = TRUE) 
 
-        x <- colMeans(x[idx])
-        y <- colMeans(y[idx])
+        x <- x[idx] %>% 
+            matrix(nrow = N, ncol = bootstrapped) %>% 
+            colMeans()
+        y <- y[idx] %>% 
+            matrix(nrow = N, ncol = bootstrapped) %>% 
+            colMeans()
     }
 
     ci_x <- quantile(x, probs = bounds)
