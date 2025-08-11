@@ -218,7 +218,7 @@ data <- lapply(
                 # Generate the data
                 tmp <- fx[[name]](p) %>% 
                     dplyr::mutate(
-                        time = (dplyr::row_number() - 1) / 2,
+                        time = (dplyr::row_number() - 1) / 10,
                         id = paste0(name, "_", p)
                     )
 
@@ -232,8 +232,8 @@ data <- lapply(
                             NA, 
                             sqrt((x[2:N] - x[2:N - 1])^2 + (y[2:N] - y[2:N - 1])^2)
                         ),
-                        x = 0.7 * x / mean(distance, na.rm = TRUE), 
-                        y = 0.7 * y / mean(distance, na.rm = TRUE)
+                        x = 0.14 * x / mean(distance, na.rm = TRUE), 
+                        y = 0.14 * y / mean(distance, na.rm = TRUE)
                     ) %>% 
                     dplyr::select(x, y, time, id)
 
@@ -309,7 +309,7 @@ data.table::fwrite(
 # Transform the dataset to include random error. This error will be equal to 
 # a few centimeters, based on earlier estimates of the measurement error, 
 # specifically coming from the calibration test of 22-12-2023, where the upper 
-# bound of the 99%CI was about 6cm. 
+# bound of the 95%CI was about 6cm. 
 #
 # We use the maximal variance for both x- and y-coordinates, which is equal to 
 # 0.004468. We also take the covariance into account, again selecting the 
@@ -320,10 +320,10 @@ covariances <- do.call(
     "rbind",
     readRDS(file.path("results", "study 1", "unsystematic error, overall covariance.Rds"))
 )
-max_var <- max(covariances$ub[covariances$covariance != "cov_xy"])
-max_cov <- max(covariances$ub[covariances$covariance == "cov_xy"])
+mean_var <- mean(covariances$ub[covariances$covariance != "cov_xy"])
+mean_cov <- mean(covariances$ub[covariances$covariance == "cov_xy"])
 S <- matrix(
-    c(max_var, max_cov, max_cov, max_var),
+    c(mean_var, mean_cov, mean_cov, mean_var),
     nrow = 2,
     ncol = 2
 )
@@ -368,18 +368,36 @@ for(i in seq_along(filenames)) {
 # both for contemporaneous and lagged measurement error. The parameters that 
 # are used here are taken from estimations we did on the stationary calibration 
 # data. The measurement error is added for each experiment and id separately.
-params <- readRDS(file.path("results", "study 1", "unsystematic error, autoregression parameters.Rds"))
+params <- data.table::fread(
+    file.path("results", "study 1", "unsystematic error, autoregression parameters.csv"),
+    data.table = FALSE
+) %>% 
+    dplyr::summarize(
+        auto_x = mean(q975_auto_x, na.rm = TRUE), 
+        auto_xy = mean(q975_auto_xy, na.rm = TRUE),
+        auto_yx = mean(q975_auto_yx, na.rm = TRUE),
+        auto_y = mean(q975_auto_y, na.rm = TRUE),
+        sigma_x = mean(q975_sigma_x, na.rm = TRUE),
+        sigma_y = mean(q975_sigma_y, na.rm = TRUE),
+        sigma_xy = mean(q975_sigma_xy, na.rm = TRUE)
+    ) %>% 
+    as.numeric()
 B <- matrix(
-    params[3:6, 3],
+    c(
+        mean(c(params[1], params[4])),
+        mean(params[2:3]),
+        mean(params[2:3]),
+        mean(c(params[1], params[4]))
+    ),
     nrow = 2, 
     ncol = 2
 )
 S <- matrix(
     c(
-        max(params[c(7, 10), 3]), 
-        max(params[8:9, 3]), 
-        max(params[8:9, 3]), 
-        max(params[c(7, 10), 3])
+        mean(params[5:6]), 
+        params[7],
+        params[7],
+        mean(params[5:6])
     ),
     nrow = 2, 
     ncol = 2

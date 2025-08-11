@@ -376,10 +376,10 @@ covariances <- do.call(
     "rbind",
     readRDS(file.path("results", "study 1", "unsystematic error, overall covariance.Rds"))
 )
-max_var <- max(covariances$ub[covariances$covariance != "cov_xy"])
-max_cov <- max(covariances$ub[covariances$covariance == "cov_xy"])
+mean_var <- mean(covariances$ub[covariances$covariance != "cov_xy"])
+mean_cov <- mean(covariances$ub[covariances$covariance == "cov_xy"])
 S <- matrix(
-    c(max_var, max_cov, max_cov, max_var),
+    c(mean_var, mean_cov, mean_cov, mean_var),
     nrow = 2,
     ncol = 2
 )
@@ -420,18 +420,36 @@ data <- data.table::fread(
 
 # Here, we will need to create a vector autoregressive model that will account 
 # both for contemporaneous and lagged measurement error. 
-params <- readRDS(file.path("results", "study 1", "unsystematic error, autoregression parameters.Rds"))
+params <- data.table::fread(
+    file.path("results", "study 1", "unsystematic error, autoregression parameters.csv"),
+    data.table = FALSE
+) %>% 
+    dplyr::summarize(
+        auto_x = mean(q975_auto_x, na.rm = TRUE), 
+        auto_xy = mean(q975_auto_xy, na.rm = TRUE),
+        auto_yx = mean(q975_auto_yx, na.rm = TRUE),
+        auto_y = mean(q975_auto_y, na.rm = TRUE),
+        sigma_x = mean(q975_sigma_x, na.rm = TRUE),
+        sigma_y = mean(q975_sigma_y, na.rm = TRUE),
+        sigma_xy = mean(q975_sigma_xy, na.rm = TRUE)
+    ) %>% 
+    as.numeric()
 B <- matrix(
-    params[3:6, 3],
+    c(
+        mean(c(params[1], params[4])),
+        mean(params[2:3]),
+        mean(params[2:3]),
+        mean(c(params[1], params[4]))
+    ),
     nrow = 2, 
     ncol = 2
 )
 S <- matrix(
     c(
-        max(params[c(7, 10), 3]), 
-        max(params[8:9, 3]), 
-        max(params[8:9, 3]), 
-        max(params[c(7, 10), 3])
+        mean(params[5:6]), 
+        params[7],
+        params[7],
+        mean(params[5:6])
     ),
     nrow = 2, 
     ncol = 2
