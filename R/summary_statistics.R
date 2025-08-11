@@ -153,7 +153,7 @@ bias <- function(x) {
 #' 
 #' @export
 rmse <- function(x) {
-    return(sd(x))
+    return(sqrt(1/length(x) * sum(x^2)))
 }
 
 #' Compute MAE
