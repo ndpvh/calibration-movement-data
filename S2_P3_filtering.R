@@ -22,7 +22,7 @@ library(locfit)
 # Parallellization
 #-------------------------------------------------------------------------------
 
-n_cores <- 11 #max(c(parallel::detectCores() - 1, 1))
+n_cores <- 3 #max(c(parallel::detectCores() - 1, 1))
 
 
 
@@ -93,7 +93,7 @@ mw <- list(
     \(x) nameless::weighted_average(
         x, 
         .by = "relative_time", 
-        weights = \(x) dnorm(x, mean = 0, sd = 1/2),
+        weights = \(x) dnorm(x, mean = 0, sd = 1/10),
         cols = c("x_actual", "y_actual")
     )
 ) %>% 
@@ -116,7 +116,7 @@ mw <- list(
 kalm <- list(
     "kalm" = \(x) nameless::kalman_filter(
         x, 
-        assumed_variance = 0.004468,
+        assumed_variance = 0.0012170846,
         reverse = FALSE,
         .by = "id"
     )
