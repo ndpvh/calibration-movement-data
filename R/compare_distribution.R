@@ -46,12 +46,15 @@ compare_distribution <- function(x,
     ci_y <- quantile(y, probs = bounds)
     ci <- quantile(x - y, probs = bounds)
 
-    return(data.frame(median_x = ci_x[2],
+    return(data.frame(mean_x = mean(x, na.rm = TRUE),
+                      median_x = ci_x[2],
                       ci_x_lower = ci_x[1], 
                       ci_x_upper = ci_x[3],
+                      mean_y = mean(y, na.rm = TRUE),
                       median_y = ci_y[2],
                       ci_y_lower = ci_y[1], 
                       ci_y_upper = ci_y[3],
+                      mean_diff = mean(x - y, na.rm = TRUE),
                       median_diff = ci[2],
                       ci_diff_lower = ci[1],
                       ci_diff_upper = ci[3],
