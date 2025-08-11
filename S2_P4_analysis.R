@@ -31,7 +31,7 @@ data <- lapply(
     `names<-` (files)
 
 # Define the columns in which we are interested
-columns <- c("bias_dist", "rmse_dist", "mae_dist")
+columns <- c("bias_dist", "rmse_dist")
 
 # Loop over the different datafiles and compare the values of the summary 
 # statistics for each of the conditions to the values of these same statistics
@@ -54,24 +54,35 @@ distribution <- lapply(
         result <- lapply(
             columns, 
             function(y) {
-               # Create reference
-               reference <- before[, y]
+                # Create reference
+                reference <- before[, y]
+ 
+                # Use mutate on the nested data
+                after <- after %>% 
+                    dplyr::rowwise() %>% 
+                    dplyr::mutate(
+                        data_2 = data %>%
+                            as.data.frame() %>% 
+                            dplyr::select(tidyselect::matches(y)) %>% 
+                            unlist() %>% 
+                            as.numeric() %>% 
+                            nameless::compare_distribution(
+                                reference, 
+                                bootstrapped = 10000
+                            ) %>% 
+                            list()) %>% 
+                    dplyr::ungroup() %>% 
+                    dplyr::select(-data) %>% 
+                    tidyr::unnest(data_2) 
 
-               # Use mutate on the nested data
-               after %>% 
-                   dplyr::rowwise() %>% 
-                   dplyr::mutate(
-                      data_2 = data %>%
-                          as.data.frame() %>% 
-                          dplyr::select(tidyselect::matches(y)) %>% 
-                          unlist() %>% 
-                          as.numeric() %>% 
-                          nameless::compare_distribution(reference) %>% 
-                          list()) %>% 
-                   dplyr::ungroup() %>% 
-                   dplyr::select(-data) %>% 
-                   tidyr::unnest(data_2) %>% 
-                   return()                                          
+                nameless::compare_distribution(
+                    reference,
+                    reference, 
+                    bootstrapped = 10000
+                ) %>% 
+                    dplyr::mutate(preprocessing_function = "before") %>% 
+                    rbind(after) %>% 
+                    return()
             }
         )
 
