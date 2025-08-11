@@ -31,6 +31,7 @@ compare_distribution <- function(x,
                                  bootstrapped = NA) {
     
     bounds <- c(alpha/2, 0.5, 1 - alpha/2)
+    diff <- x - y
 
     if(!is.na(bootstrapped)) {
         N <- length(x)
@@ -43,11 +44,14 @@ compare_distribution <- function(x,
         y <- y[idx] %>% 
             matrix(nrow = N, ncol = bootstrapped) %>% 
             colMeans()
+        diff <- diff[idx] %>% 
+            matrix(nrow = N, ncol = bootstrapped) %>% 
+            colMeans()
     }
 
     ci_x <- quantile(x, probs = bounds)
     ci_y <- quantile(y, probs = bounds)
-    ci <- quantile(x - y, probs = bounds)
+    ci <- quantile(diff, probs = bounds)
 
     return(data.frame(mean_x = mean(x, na.rm = TRUE),
                       median_x = ci_x[2],
