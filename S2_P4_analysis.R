@@ -82,6 +82,7 @@ distribution <- lapply(
                 ) %>% 
                     dplyr::mutate(preprocessing_function = "before") %>% 
                     rbind(after) %>% 
+                    dplyr::relocate(preprocessing_function) %>% 
                     return()
             }
         )
@@ -137,7 +138,7 @@ for(i in names(data)) {
 #     but ensures some pipelines get picked even when all pipelines performed 
 #     bad in some datasets (e.g., time-related error has no significant pipelines
 #     that reduced the mean distance)
-statistics <- c("bias_dist", "mae_dist", "rmse_dist")
+statistics <- c("bias_dist", "rmse_dist")
 results <- data.frame(
     preprocessing_function = significant %>% 
         dplyr::filter(statistics == "bias_dist") %>% 
@@ -163,9 +164,20 @@ for(i in statistics) {
             selected = selected >= 2/3
         ) %>% 
         dplyr::ungroup() %>% 
-        dplyr::select(preprocessing_function, selected)
+        dplyr::select(-statistics) %>% 
+        dplyr::relocate(
+            preprocessing_function,
+            selected
+        )
 
-    tmp <- setNames(tmp, c("preprocessing_function", i))
+    tmp <- setNames(
+        tmp, 
+        c(
+            "preprocessing_function", 
+            i,
+            paste0(i, "_", colnames(tmp[, -c(1:2)]))
+        )
+    )
 
     results <- dplyr::full_join(
         results, 
@@ -173,6 +185,13 @@ for(i in statistics) {
         by = "preprocessing_function"
     )    
 }
+
+results <- dplyr::relocate(
+    results,
+    preprocessing_function,
+    bias_dist,
+    rmse_dist
+)
 
 View(results)
 data.table::fwrite(
