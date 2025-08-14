@@ -204,6 +204,278 @@ data.table::fwrite(
 
 
 #-------------------------------------------------------------------------------
+# Some descriptives
+#-------------------------------------------------------------------------------
+
+# Create one big file of distributional differences
+results <- lapply(
+    names(distribution),
+    \(x) distribution[[x]] %>% 
+        dplyr::mutate(
+            file = x,
+            type = stringr::str_split(x, pattern = "_")[[1]][1],
+            error = stringr::str_split(x, pattern = "_")[[1]][2]
+        )
+)
+results <- do.call("rbind", results)
+
+# Look at mean reductions
+results[results$preprocessing_function != "before", ] %>% 
+    dplyr::group_by(type, statistic) %>% 
+    dplyr::summarize(
+        mean = mean(mean_diff, na.rm = TRUE),
+        ci_lower = mean(ci_diff_lower, na.rm = TRUE), 
+        ci_upper = mean(ci_diff_upper, na.rm = TRUE)
+    )
+
+results[results$preprocessing_function == "before", ] %>% 
+    dplyr::group_by(type, statistic) %>% 
+    dplyr::summarize(
+        mean = mean(mean_x, na.rm = TRUE),
+        ci_lower = mean(ci_x_lower, na.rm = TRUE), 
+        ci_upper = mean(ci_x_upper, na.rm = TRUE)
+    )
+
+
+
+# Specific to when mean_diff > 0
+results[results$preprocessing_function != "before", ] %>% 
+    dplyr::group_by(type, statistic, preprocessing_function) %>% 
+    dplyr::summarize(
+        mean = mean(mean_diff, na.rm = TRUE),
+        ci_lower = mean(ci_diff_lower, na.rm = TRUE), 
+        ci_upper = mean(ci_diff_upper, na.rm = TRUE)
+    ) %>% 
+    dplyr::mutate(bad = ci_upper > 0) %>% 
+    dplyr::ungroup() %>% 
+    dplyr::group_by(type, statistic, bad) %>% 
+    dplyr::summarize(
+        mean = mean(mean, na.rm = TRUE),
+        ci_lower = mean(ci_lower, na.rm = TRUE), 
+        ci_upper = mean(ci_upper, na.rm = TRUE)
+    )
+
+
+# Examine how many pipelines added error rather than reduced it
+results[results$preprocessing_function != "before", ] %>% 
+    dplyr::group_by(type, statistic, error) %>% 
+    dplyr::mutate(bad = mean_diff > 0) %>% 
+    dplyr::filter(type == "movement") %>% 
+    dplyr::filter(bad) %>% 
+    View()
+
+
+
+
+
+#-------------------------------------------------------------------------------
+# ANOVA
+#-------------------------------------------------------------------------------
+
+# Define the names of all the summary files, which contains the values of the 
+# summary statistics for each simulation and condition. This will be used as the 
+# basis for the main analyses.
+files <- paste0(
+    rep(
+        c("movement", "fixed"),
+        each = 6
+    ),
+    "_",
+    rep(
+        c("R10", "T10", "R6R", "T6R", "R6N", "T6N"),
+        times = 2
+    )
+)
+
+# Create the data with differences in it already
+data <- lapply(
+    files, 
+    function(x) {
+        # Read in the datafile and add information on the type of file it is
+        data <- data.table::fread(
+            file.path("results", "study 2", paste0("summary_", x, ".csv")), 
+            data.table = FALSE
+        ) %>% 
+            dplyr::mutate(
+                file = x,
+                type = stringr::str_split(x, pattern = "_")[[1]][1],
+                error = stringr::str_split(x, pattern = "_")[[1]][2]
+            )
+
+        # Create a reference and test to be used to create differences
+        reference <- data[data$preprocessed == "before", ]
+        test <- data[data$preprocessed != "before", ]
+
+        # Once done, we can make differences as follows
+        test %>% 
+            dplyr::group_by(preprocessing_function) %>% 
+            tidyr::nest() %>% 
+            dplyr::mutate(
+                data_2 = data[[1]] %>% 
+                    dplyr::select(
+                        nsim, 
+                        id,
+                        bias_dist, 
+                        rmse_dist, 
+                        mae_dist
+                    ) %>% 
+                    dplyr::rename(
+                        bias_test = bias_dist,
+                        rmse_test = rmse_dist,
+                        mae_test = mae_dist
+                    ) %>% 
+                    dplyr::full_join(
+                        reference,
+                        by = c("nsim", "id")
+                    ) %>% 
+                    dplyr::mutate(
+                        bias_diff = bias_test - bias_dist, 
+                        rmse_diff = rmse_test - rmse_dist,
+                        mae_diff = mae_test - mae_dist
+                    ) %>% 
+                    dplyr::select(
+                        nsim, 
+                        id,
+                        bias_diff, 
+                        rmse_diff, 
+                        mae_diff,
+                        file, 
+                        type, 
+                        error
+                    ) %>% 
+                    list()
+            ) %>% 
+            dplyr::select(-data) %>% 
+            tidyr::unnest(data_2) %>% 
+            dplyr::ungroup() %>% 
+            return()
+    }
+)  
+data <- do.call("rbind", data)
+
+# Add all types of dummy variables to the mix, allowing us to create an ANOVA-type
+# of analysis
+components <- c(
+    "av", 
+    "idx", 
+    "time", 
+    "kalm", 
+    "loess-1", 
+    "loess-2",
+    "loess-3"
+)
+for(i in components) {
+    data[, i] <- stringr::str_detect(data$preprocessing_function, i)
+}
+
+data$moving_window <- rowSums(data[, c("av", "idx", "time")]) > 0
+data$loess <- rowSums(data[, c("loess-1", "loess-2", "loess-3")]) > 0
+
+# Perform ANOVAs of interest for the positional data
+model <- aov(
+    bias_diff ~ moving_window * loess * kalm, 
+    data = data[data$type == "fixed", ]
+) 
+lsr::etaSquared(model)
+
+model <- aov(
+    rmse_diff ~ moving_window * loess * kalm, 
+    data = data[data$type == "fixed", ]
+) 
+lsr::etaSquared(model)
+
+
+
+model <- aov(
+    bias_diff ~ av + idx + time,
+    data = data[data$type == "fixed", ]
+)
+lsr::etaSquared(model)
+
+model <- aov(
+    rmse_diff ~ av + idx + time,
+    data = data[data$type == "fixed", ]
+)
+lsr::etaSquared(model)
+
+
+
+model <- aov(
+    bias_diff ~ `loess-1` + `loess-2` + `loess-3`,
+    data = data[data$type == "fixed", ]
+)
+lsr::etaSquared(model)
+
+model <- aov(
+    rmse_diff ~ `loess-1` + `loess-2` + `loess-3`,
+    data = data[data$type == "fixed", ]
+)
+lsr::etaSquared(model)
+
+
+
+# Perform ANOVAs of interest for the movement data
+model <- aov(
+    bias_diff ~ moving_window * loess * kalm, 
+    data = data[data$type == "movement", ]
+) 
+lsr::etaSquared(model)
+
+model <- aov(
+    rmse_diff ~ moving_window * loess * kalm, 
+    data = data[data$type == "movement", ]
+) 
+lsr::etaSquared(model)
+
+
+
+model <- aov(
+    bias_diff ~ moving_window * loess * kalm, 
+    data = data[data$type == "movement" & !data$moving_window, ]
+) 
+lsr::etaSquared(model)
+
+model <- aov(
+    rmse_diff ~ moving_window * loess * kalm, 
+    data = data[data$type == "movement" & !data$moving_window, ]
+) 
+lsr::etaSquared(model)
+
+
+
+model <- aov(
+    bias_diff ~ av + idx + time,
+    data = data[data$type == "movement", ]
+)
+lsr::etaSquared(model)
+
+model <- aov(
+    rmse_diff ~ av + idx + time,
+    data = data[data$type == "movement", ]
+)
+lsr::etaSquared(model)
+
+
+
+model <- aov(
+    bias_diff ~ `loess-1` + `loess-2` + `loess-3`,
+    data = data[data$type == "movement", ]
+)
+lsr::etaSquared(model)
+
+model <- aov(
+    rmse_diff ~ `loess-1` + `loess-2` + `loess-3`,
+    data = data[data$type == "movement", ]
+)
+lsr::etaSquared(model)
+
+
+
+
+
+
+
+#-------------------------------------------------------------------------------
 # Error covariance
 #-------------------------------------------------------------------------------
 
@@ -295,6 +567,45 @@ saveRDS(
     file.path("results", "study 2", "unsystematic error, overall covariance.Rds")
 )
 
+# Bind all together
+results <- lapply(
+    names(results),
+    \(x) results[[x]] %>% 
+        dplyr::mutate(
+            file = x,
+            type = stringr::str_split(x, pattern = "_")[[1]][1],
+            error = stringr::str_split(x, pattern = "_")[[1]][2]
+        )
+)
+results <- do.call("rbind", results)
+
+# Check mean values for the error. Do separately for the different types, so 
+# to be able to filter out the problematic pipelines
+results %>% 
+    dplyr::filter(type == "fixed") %>% 
+    dplyr::group_by(covariance) %>% 
+    dplyr::summarize( 
+        lb = mean(lb),
+        mean = mean(mean), 
+        ub = mean(ub)
+    ) %>% 
+    View()
+
+results %>% 
+    dplyr::filter(type == "movement") %>% 
+    dplyr::mutate( 
+        av = stringr::str_detect(preprocessing_function, "av"),
+        idx = stringr::str_detect(preprocessing_function, "idx"), 
+        to_delete = (av + idx) > 0
+    ) %>% 
+    dplyr::filter(!to_delete) %>% 
+    dplyr::group_by(covariance) %>% 
+    dplyr::summarize( 
+        lb = mean(lb),
+        mean = mean(mean), 
+        ub = mean(ub)
+    ) %>% 
+    View()
 
 
 
@@ -380,9 +691,11 @@ for(i in seq_along(data_list)){
     data <- data[data$preprocessed == "after", ]
 
     # Define which pipelines you're looking at
-    parameters <- lapply(
+    parameters <- parallel::mclapply(
         unique(data$preprocessing_function),
         function(name) {
+            print(name)
+
             # Bootstrap the data using this function and immediately compute the necessary
             # summary statistics: 2 variances and 1 covariance.
             data %>% 
@@ -455,7 +768,8 @@ for(i in seq_along(data_list)){
                 suppressWarnings() %>% 
                 suppressMessages() %>% 
                 return() 
-        }
+        },
+        mc.cores = 3
     )
 
     # Add to the results list
@@ -472,6 +786,48 @@ saveRDS(
     file.path("results", "study 2", "unsystematic error, autoregression.Rds")
 )
 
+# Bind all together
+results <- lapply(
+    names(results),
+    \(x) results[[x]] %>% 
+        dplyr::mutate(
+            file = x,
+            type = stringr::str_split(x, pattern = "_")[[1]][1],
+            error = stringr::str_split(x, pattern = "_")[[1]][2]
+        )
+)
+results <- do.call("rbind", results)
+
+# Check mean values for the error. Do separately for the different types, so 
+# to be able to filter out the problematic pipelines
+results %>% 
+    dplyr::filter(type == "fixed") %>% 
+    dplyr::filter(stringr::str_detect(error, "T")) %>% 
+    dplyr::group_by(covariance) %>% 
+    dplyr::summarize( 
+        lb = mean(lb),
+        mean = mean(mean), 
+        ub = mean(ub)
+    ) %>% 
+    View()
+
+results %>% 
+    dplyr::filter(type == "movement") %>% 
+    dplyr::filter(stringr::str_detect(error, "T")) %>% 
+    dplyr::mutate( 
+        av = stringr::str_detect(preprocessing_function, "av"),
+        idx = stringr::str_detect(preprocessing_function, "idx"), 
+        to_delete = (av + idx) > 0
+    ) %>% 
+    dplyr::filter(!to_delete) %>% 
+    dplyr::group_by(covariance) %>% 
+    dplyr::summarize( 
+        lb = mean(lb),
+        mean = mean(mean), 
+        ub = mean(ub)
+    ) %>% 
+    View()
+
 
 
 
@@ -482,7 +838,7 @@ saveRDS(
 
 # Select four cases, namely movement/fixed vs R10/T6N
 cases <- paste(
-    rep(c("movement", "fixed"), times = 2),
+    rep(c("fixed", "movement"), times = 2),
     rep(c("R10", "T6N"), each = 2),
     sep = "_"
 )
@@ -569,9 +925,11 @@ for(i in c("rmse_dist", "bias_dist")) {
                         color = "black",
                         linewidth = 1.5
                     ),
-                    panel.grid = ggplot2::element_line(
+                    panel.grid.major.x = ggplot2::element_line(
                         color = "gray75"
                     ),
+                    panel.grid.major.y = ggplot2::element_blank(),
+                    panel.grid.minor = ggplot2::element_blank(),
                     plot.title = ggplot2::element_text(
                         hjust = 0.5, 
                         size = 30
