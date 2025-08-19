@@ -13,6 +13,7 @@
 local_regression <- function(data, 
                              .by = NULL,
                              degree = 1,
+                             spans = seq(0.1, 0.9, 0.05),
                              ...) {
 
     # Create an internal function that will take in a single dataset (grouped by 
@@ -27,7 +28,6 @@ local_regression <- function(data,
         # Here, we assume that the span-value will be the same for both x and y 
         # direction. To ensure this is the case, we bind both types of in one big 
         # data.frame under another name z.
-        spans <- seq(0.1, 0.9, 0.05)
         xy_data <- data.frame(z = c(grouped_data$x, grouped_data$y), 
                               time = c(grouped_data$time, max(grouped_data$time) + grouped_data$time))
     
