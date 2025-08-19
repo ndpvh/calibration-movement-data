@@ -22,7 +22,7 @@ library(locfit)
 # Parallellization
 #-------------------------------------------------------------------------------
 
-n_cores <- 11 #max(c(parallel::detectCores() - 1, 1))
+n_cores <- 3 #max(c(parallel::detectCores() - 1, 1))
 
 
 
@@ -68,12 +68,34 @@ selection <- data.table::fread(
     file.path("results", "study 2", "selected_filters.csv"),
     data.table = FALSE
 )
-selection$total <- selection$bias_dist & selection$mae_dist & selection$rmse_dist
+selection$total <- selection$bias_dist & selection$rmse_dist
 
 # Filter out those combinations of functions that did not perform well, mapping
 # the names in the data.frame to the names of the list
 selected <- selection$preprocessing_function[selection$total]
 filters <- filters[selected]
+
+# Adjust the spans of the LOESS analysis
+spans <- seq(
+    1 / 1800, 
+    1799 / 1800, 
+    5 / 1800
+)
+reg <- list(
+    "loess-1" = \(x) nameless::local_regression(x, .by = "id", degree = 1, spans = spans), 
+    "loess-2" = \(x) nameless::local_regression(x, .by = "id", degree = 2, spans = spans),
+    "loess-3" = \(x) nameless::local_regression(x, .by = "id", degree = 3, spans = spans)
+)
+
+for(i in names(filters)) {
+    if(stringr::str_detect(i, "loess")) {
+        split <- stringr::str_split(i, "_")[[1]]
+        idx <- which(split %in% names(reg))
+        idy <- which(names(reg) %in% split)
+
+        filters[[i]][[idx]] <- reg[[idy]]
+    }
+}
 
 saveRDS(
     filters, 
@@ -119,30 +141,32 @@ for(i in seq_along(data_files)) {
     )
 }
 
-# Now that we have all results, we will also create overview files containing 
-# all results together. Will make interpretation and analysis somewhat easier
-filenames <- paste(data_files, ".csv", sep = "")
+# COMMENTED OUT DUE TO MEMORY INTENSITY
+#
+# # Now that we have all results, we will also create overview files containing 
+# # all results together. Will make interpretation and analysis somewhat easier
+# filenames <- paste(data_files, ".csv", sep = "")
 
-# Merge datafiles together. Loop over trajectory or summary
-for(i in c("trajectory", "summary")) {    
-    # Load these files and put them in a list
-    files <- lapply(
-        filenames, 
-        \(x) data.table::fread(
-            file.path("results", "study 3", paste0(i, "_", x)), 
-            data.table = FALSE
-        ) %>% 
-            dplyr::mutate(
-                error_type = stringr::str_split_i(x, pattern = "_", i = 2) %>% 
-                    stringr::str_split_i(pattern = ".csv", i = 1)
-            )
-    )
+# # Merge datafiles together. Loop over trajectory or summary
+# for(i in c("trajectory", "summary")) {    
+#     # Load these files and put them in a list
+#     files <- lapply(
+#         filenames, 
+#         \(x) data.table::fread(
+#             file.path("results", "study 3", paste0(i, "_", x)), 
+#             data.table = FALSE
+#         ) %>% 
+#             dplyr::mutate(
+#                 error_type = stringr::str_split_i(x, pattern = "_", i = 2) %>% 
+#                     stringr::str_split_i(pattern = ".csv", i = 1)
+#             )
+#     )
 
-    # Bind these data together and save in a conjoint file
-    files <- do.call("rbind", files) 
+#     # Bind these data together and save in a conjoint file
+#     files <- do.call("rbind", files) 
 
-    data.table::fwrite(
-        files, 
-        file.path("results", "study 3", paste0(i, ".csv"))
-    )
-}
+#     data.table::fwrite(
+#         files, 
+#         file.path("results", "study 3", paste0(i, ".csv"))
+#     )
+# }
