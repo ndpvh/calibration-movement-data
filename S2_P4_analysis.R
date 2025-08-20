@@ -833,7 +833,7 @@ results %>%
 
 
 #-------------------------------------------------------------------------------
-# Visualization
+# Visualization of distributions
 #-------------------------------------------------------------------------------
 
 # Select four cases, namely movement/fixed vs R10/T6N
@@ -961,4 +961,174 @@ for(i in c("rmse_dist", "bias_dist")) {
         height = 5000,
         unit = "px"
     )
+}
+
+
+
+
+
+
+#-------------------------------------------------------------------------------
+# Visualization of movement in x- and y-direction
+#-------------------------------------------------------------------------------
+
+# Read in data from all types of error
+files <- paste(
+    rep(c("fixed", "movement"), each = 6), 
+    rep(c("R10", "R6R", "R6N", "T10", "T6R", "T6N"), times = 2),
+    sep = "_"
+)
+
+data <- lapply(
+    files, 
+    \(x) data.table::fread(
+        file.path("data", "study 2", paste0(x, ".csv")), 
+        data.table = FALSE
+    ) %>% 
+        dplyr::filter(nsim == 1)
+) %>%  
+    `names<-` (files)
+
+# With the data read in, we can start visualizing the trajectories in the x and 
+# y direction for a given participant (just some type of visualization is okay)
+id <- c("fixed_1", "circle_20", "rectangle_20", "spiral_20")
+for(i in seq_along(data)) {
+    # Select only relevant id's
+    id_data <- id[id %in% unique(data[[i]]$id)]
+
+    for(j in id_data) {
+        # Select the relevant data
+        plot_data <- data[[i]][data[[i]]$id == j, ] %>% 
+            dplyr::select(x, y, time)
+
+        # Loop over the columns of interest
+        cols <- c("x", "y")
+        plt <- lapply(
+            cols, 
+            function(x) {
+                tmp <- plot_data[, c("time", x)] %>% 
+                    setNames(c("X", "Y"))
+
+                plt <- ggplot2::ggplot(
+                    data = tmp, 
+                    ggplot2::aes(
+                        x = X, 
+                        y = Y
+                    )
+                ) +
+                    ggplot2::geom_line(
+                        col = "black", 
+                        linewidth = 2
+                    ) + 
+                    ggplot2::labs(
+                        x = "Time", 
+                        y = x
+                    ) +
+                    ggplot2::theme(
+                        panel.background = ggplot2::element_rect(
+                            fill = "white"
+                        ),
+                        panel.border = ggplot2::element_rect(
+                            fill = NA,
+                            color = "black",
+                            linewidth = 1.5
+                        ),
+                        panel.grid.major = ggplot2::element_line(
+                            color = "gray75"
+                        ),
+                        plot.title = ggplot2::element_text(
+                            hjust = 0.5, 
+                            size = 30
+                        ),
+                        axis.text = ggplot2::element_text(size = 8),
+                        axis.title = ggplot2::element_text(size = 25)
+                    )
+
+                return(plt)
+            }
+        )
+
+        # Bind together and save
+        plt <- ggpubr::ggarrange(
+            plotlist = plt, 
+            nrow = 2
+        )
+
+        ggplot2::ggsave(
+            file.path("figures", "study 2", paste0(files[i], "_", j, "_timeseries.png")),
+            plt,
+            width = 5500, 
+            height = 3500, 
+            unit = "px"
+        )
+
+        # Let's also look at the actual movements
+        plot_data <- cbind(
+            plot_data[2:nrow(plot_data), c("x", "y")], 
+            plot_data[2:nrow(plot_data) - 1, c("x", "y")]
+        ) %>% 
+            setNames(c("x", "y", "xend", "yend"))
+
+        plt_2 <- ggplot2::ggplot(
+            data = plot_data, 
+            ggplot2::aes(
+                x = x, 
+                y = y,
+                xend = xend, 
+                yend = yend
+            )
+        ) +
+            ggplot2::geom_segment(
+                col = "black", 
+                linewidth = 2
+            ) + 
+            ggplot2::labs(
+                x = "x", 
+                y = "y"
+            ) +
+            ggplot2::coord_equal() +
+            ggplot2::theme(
+                panel.background = ggplot2::element_rect(
+                    fill = "white"
+                ),
+                panel.border = ggplot2::element_rect(
+                    fill = NA,
+                    color = "black",
+                    linewidth = 1.5
+                ),
+                panel.grid.major = ggplot2::element_line(
+                    color = "gray75"
+                ),
+                plot.title = ggplot2::element_text(
+                    hjust = 0.5, 
+                    size = 30
+                ),
+                axis.text = ggplot2::element_text(size = 8),
+                axis.title = ggplot2::element_text(size = 25)
+            )
+
+        ggplot2::ggsave(
+            file.path("figures", "study 2", paste0(files[i], "_", j, "_space.png")),
+            plt_2
+        )
+
+        # Bind them together, because why not
+        plt <- ggpubr::ggarrange(
+            plotlist = list(plt_2, plt),
+            ncol = 2, 
+            widths = c(1/3, 2/3),
+            labels = c("A", "B"),
+            font.label = list(
+                size = 30
+            )
+        )
+
+        ggplot2::ggsave(
+            file.path("figures", "study 2", paste0(files[i], "_", j, ".png")),
+            plt,
+            width = 8000 * 0.7, 
+            height = 3500 * 0.7,
+            units = "px"
+        )
+    }
 }
