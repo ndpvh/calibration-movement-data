@@ -647,9 +647,15 @@ ggplot2::ggsave(
 # Error reduction ##############################################################
 
 # Let's check whether this works. 
-correct <- function(x) {
+correct <- function(x, day) {
     # Estimate a polynomial of the 9th degree
     params <- polynomial(x, 9, FALSE)
+
+    # Save as the parameters for that day
+    saveRDS(
+        params,
+        file.path("results", "study 1", paste0("polynomial_", day, ".Rds"))
+    )
 
     # Retrieve the independent variables X and the parameters B
     X <- params$X 
@@ -667,8 +673,8 @@ correct <- function(x) {
 # Additionally compute the distance of the raw and the corrected measurements
 # to the real positions.
 corrected_data <- lapply(
-    data_list, 
-    \(x) x %>% 
+    names(data_list), 
+    \(x) data_list[[x]] %>% 
         # Transform to -1, 1 range based on anchor positions
         dplyr::mutate(
             x = 2 * (x - anchor_xmin) / (anchor_xmax - anchor_xmin) - 1,
@@ -677,7 +683,7 @@ corrected_data <- lapply(
             Y = 2 * (Y - anchor_ymin) / (anchor_ymax - anchor_ymin) - 1
         ) %>% 
         # Use the polynomial to correct the distortion
-        correct() %>% 
+        correct(day = x) %>% 
         # Transform back to original scale
         dplyr::mutate(
             x = (anchor_xmax - anchor_xmin) * (x + 1) / 2 + anchor_xmin,
@@ -1062,6 +1068,118 @@ ggplot2::ggsave(
     width = 1500 * 4,
     height = 3000 * 4,
     units = "px"
+)
+
+# Heatmap of the correction: Nothing weird seems to be going on
+correct <- function(x) {
+    # Retrieve the parameters of the polynomial as estimated in Study 1
+    params <- readRDS(file.path("results", "study 1", paste0("polynomial_14-10-2023.Rds")))
+    B <- params$B 
+
+    # Create the X matrix for these data
+    X <- matrix(
+        1, 
+        nrow = nrow(x),
+        ncol = 1
+    )
+
+    for(i in 1:9) {
+        X <- cbind(X, x$x^i, x$y^i)
+    }
+
+    # Compute the result Y and add it to the dataframe
+    Y <- X %*% B
+    x$x <- Y[, 1]
+    x$y <- Y[, 2]
+
+    return(x)
+}
+
+basis <- seq(-0.99, 0.99, 0.01)
+plot_data <- data.frame(
+    x = rep(basis, each = length(basis)),
+    y = rep(basis, times = length(basis))
+) %>% 
+    dplyr::mutate(
+        X = x, 
+        Y = y
+    ) %>% 
+    correct()
+
+plt <- lapply(
+    c("x", "y"),
+    function(x) {
+        tmp <- plot_data[, c(x, "X", "Y")] %>% 
+            setNames(c("z", "x", "y"))
+
+        plt <- ggplot2::ggplot(
+            data = tmp,
+            ggplot2::aes(
+                x = x, 
+                y = y,
+                fill = z
+            )
+        ) +
+            ggplot2::geom_tile() +
+            ggplot2::labs(
+                title = x, 
+                x = "x", 
+                y = "y"
+            )
+
+        return(plt)
+    }
+)
+
+ggpubr::ggarrange(
+    plotlist = plt, 
+    nrow = 1
+)
+
+# Related plot, one of the relationship between x -> X and y -> Y 
+cols <- list(
+    c("x", "X", "Y"),
+    c("y", "Y", "X")
+)
+
+plt <- lapply(
+    cols,
+    function(x) {
+        tmp <- plot_data[, x] %>% 
+            setNames(c("y", "x", "M")) 
+
+        # browser()
+
+        plt <- ggplot2::ggplot(
+            data = tmp,
+            ggplot2::aes(
+                x = x, 
+                y = y,
+                color = M
+            )
+        ) +
+            ggplot2::geom_point(
+                alpha = 0.10
+            ) +
+            ggplot2::geom_abline(
+                intercept = 0, 
+                slope = 1, 
+                color = "red"
+            ) +
+            # ggplot2::lims(color = c(-1, 1)) +
+            ggplot2::labs(
+                x = x[1], 
+                y = paste0("corrected ", x[1]),
+                col = x[3]
+            )
+
+        return(plt)
+    }
+)
+
+ggpubr::ggarrange(
+    plotlist = plt, 
+    nrow = 2
 )
 
 
