@@ -87,7 +87,7 @@ data_list <- lapply(
 data_list[[3]] <- data_list[[3]][data_list[[3]]$x < 13.5, ]
 
 # Add a time-variable to the data_list. Is a transformation of the timestamp 
-# provided in the actual datapoints, but now as a numeric in msec
+# provided in the actual datapoints, but now as a numeric in sec
 for(i in seq_along(data_list)) {
     data_list[[i]] <- data_list[[i]] %>% 
         dplyr::group_by(experiment) %>% 
