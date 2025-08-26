@@ -1618,6 +1618,73 @@ saveRDS(
     file.path("results", "study 1", "unsystematic error, regressions per tag - no outliers.Rds")
 )
 
+# Let's also visualize the time-series plots per tag.
+for(i in names(data_list)) {
+    data <- data_list[[i]]
+
+    tags <- unique(data$tag)
+    for(j in tags) {
+        plt <- lapply(
+            c("x", "y"), 
+            function(x) {
+                tmp <- data[data$tag == j, c("time", x)] %>% 
+                    setNames(c("X", "Y"))
+
+                plt <- ggplot2::ggplot(
+                    data = tmp,
+                    ggplot2::aes(
+                        x = X, 
+                        y = Y
+                    )
+                ) +
+                    ggplot2::geom_line(
+                        linewidth = 1.5, 
+                        color = "black"
+                    ) +
+                    ggplot2::labs(
+                        x = "Time",
+                        y = x
+                    ) +
+                    ggplot2::theme(
+                        panel.background = ggplot2::element_rect(
+                            fill = "white"
+                        ),
+                        panel.border = ggplot2::element_rect(
+                            fill = NA,
+                            color = "black",
+                            linewidth = 1.5
+                        ),
+                        panel.grid.major = ggplot2::element_line(
+                            color = "gray75"
+                        ),
+                        panel.grid.minor = ggplot2::element_blank(),
+                        plot.title = ggplot2::element_text(
+                            hjust = 0.5, 
+                            size = 30
+                        ),
+                        axis.text.y = ggplot2::element_text(size = 8),
+                        axis.title = ggplot2::element_text(size = 25)
+                    )
+
+                return(plt)
+            }
+        )
+
+        plt <- ggpubr::ggarrange(
+            plotlist = plt, 
+            nrow = 2
+        )
+
+        ggplot2::ggsave(
+            file.path("figures", "study 1", "tag-specific", paste0(i, "_", j, ".png")),
+            plt, 
+            width = 3500, 
+            height = 3000, 
+            unit = "px"
+        )
+    }
+}
+
 
 
 # Assumption of time-independence ##############################################
