@@ -1685,6 +1685,51 @@ for(i in names(data_list)) {
     }
 }
 
+# Add a formal test of the sampling rate changes per tag
+sampling_rate <- lapply(
+    names(data_list),
+    function(x) {
+        # Get the data
+        data <- data_list[[x]]
+        tags <- unique(data$tag)
+
+        # Get the number of samples per second per tag
+        results <- sapply(
+            tags,
+            function(i) {
+                tmp <- data[data$tag == i, ] %>% 
+                    dplyr::mutate(
+                        bin = ceiling(time)
+                    ) %>% 
+                    dplyr::group_by(bin) %>% 
+                    tidyr::nest() %>% 
+                    dplyr::mutate(
+                        count = nrow(data[[1]])
+                    ) %>% 
+                    dplyr::select(-data) %>% 
+                    dplyr::ungroup()
+
+                return(cor(tmp$bin, tmp$count))
+            }   
+        )                      
+    }
+)
+sampling_rate <- unlist(sampling_rate)
+
+# Bootstrap mean correlations to find out the confidence intervals
+N <- 10000
+idx <- sample(
+    1:length(sampling_rate),
+    N * length(sampling_rate),
+    replace = TRUE
+)
+
+boot <- sampling_rate[idx] %>% 
+    matrix(nrow = N, ncol = length(sampling_rate)) %>% 
+    rowMeans()
+
+quantile(boot, c(0.025, 0.975))
+
 
 
 # Assumption of time-independence ##############################################
