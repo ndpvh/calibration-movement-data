@@ -1414,20 +1414,20 @@ for(i in seq_along(data_list)){
     # given quantiles of the bootstrapped distribution. This should give us an 
     # idea of how badly off we are.
     #
-    # Here, we use a 99% CI, just to be sure
+    # Here, we use a 95% CI, just to be sure
     results[[names(data_list)[i]]] <- covariances %>% 
         # Summarize the different variables into CI and mean
         dplyr::group_by(tag) %>% 
         dplyr::summarize(
-            lb_var_x = quantile(var_x, 0.005), 
-            lb_var_y = quantile(var_y, 0.005),
-            lb_cov_xy = quantile(cov_xy, 0.005), 
+            lb_var_x = quantile(var_x, 0.025), 
+            lb_var_y = quantile(var_y, 0.025),
+            lb_cov_xy = quantile(cov_xy, 0.025), 
             m_var_x = mean(var_x), 
             m_var_y = mean(var_y), 
             m_cov_xy = mean(cov_xy), 
-            ub_var_x = quantile(var_x, 0.995), 
-            ub_var_y = quantile(var_y, 0.995),
-            ub_cov_xy = quantile(cov_xy, 0.995)
+            ub_var_x = quantile(var_x, 0.975), 
+            ub_var_y = quantile(var_y, 0.975),
+            ub_cov_xy = quantile(cov_xy, 0.975)
         ) %>% 
         dplyr::ungroup()
 
@@ -1491,9 +1491,9 @@ results_lm <- lapply(
     function(x) {
         return(
             list(
-                "x" = lm(sqrt(x$m_var_x) ~ x$distance_idealized_x),
-                "y" = lm(sqrt(x$m_var_y) ~ x$distance_idealized_y),
-                "xy" = lm(sqrt(x$m_var) ~ x$distance_idealized)
+                "x" = lm(sqrt(x$m_var_x) ~ x$distance_idealized),
+                "y" = lm(sqrt(x$m_var_y) ~ x$distance_idealized),
+                "xy" = lm(x$m_cov_xy ~ x$distance_idealized)
             )
         )
     }
@@ -1509,60 +1509,114 @@ saveRDS(
 #   - Overall, there doesn't seem to be an effect of distance from center on the 
 #     variance of the error. Seems like we can consider each tag as more or less
 #     having the same variance.
-#   - In the y-direction, 2 days do display some significance, namely 14-10-2023
-#     and 22-12-2023. Let's plot to make sense of the results.
+#   - There are two significant effects, though, so let's visualize and 
+#     interpret them
+#
+# Visualize this only for those errors that seem to stand out.
+cols <- list(
+    "22-12-2023" = c("m_var_y", "distance_idealized"), 
+    "16-11-2024" = c("m_var_x", "distance_idealized")
+)
+plot_data <- lapply(
+    names(cols),
+    \(x) results[[x]][, cols[[x]]] %>% 
+        setNames(c("y", "x")) %>% 
+        dplyr::mutate(y = sqrt(y))
+) %>% 
+    `names<-` (names(cols))
 
-# Create plots of the relationship between each
-dists <- paste0("distance_idealized", c("", "_x", "_y"))
-locations <- paste0("m_var", c("", "_x", "_y")) 
+variance <- list(
+    "22-12-2023" = latex2exp::TeX("$\\sigma_y$"), 
+    "16-11-2024" = latex2exp::TeX("$\\sigma_x$")
+)
 
-plots <- lapply(
-    names(results),
-    function(x) {
-        data <- results[[x]]
-
-        plt <- lapply(
-            seq_along(dists), 
-            function(i) {
-                plot_data <- data[, c(dists[i], locations[i])] %>% 
-                    setNames(c("X", "Y"))
-
-                return(
-                    ggplot2::ggplot(plot_data, 
-                                    ggplot2::aes(x = X, 
-                                                 y = Y)) +
-                        ggplot2::geom_point(size = 4, 
-                                            shape = 21, 
-                                            color = "cornflowerblue") +
-                        ggplot2::labs(title = ifelse(i == 1, x, ""),
-                                      x = dists[i], 
-                                      y = locations[i])
-                )
-            }
+plt <- lapply(
+    names(plot_data), 
+    \(x) ggplot2::ggplot(
+        data = plot_data[[x]], 
+        ggplot2::aes(
+            x = x, 
+            y = y
         )
+    ) +
+        ggplot2::geom_point(
+            size = 4, 
+            shape = 16,
+            color = "cornflowerblue",
+            alpha = 1
+        ) +
+        ggplot2::labs(
+            title = x, 
+            x = "Distance to center",
+            y = variance[[x]]
+        ) +
+        ggplot2::theme(
+            panel.background = ggplot2::element_rect(
+                fill = "white"
+            ),
+            panel.border = ggplot2::element_rect(
+                fill = NA,
+                color = "black",
+                linewidth = 1.5
+            ),
+            panel.grid.major = ggplot2::element_line(
+                color = "gray75"
+            ),
+            panel.grid.minor = ggplot2::element_blank(),
+            plot.title = ggplot2::element_text(
+                hjust = 0.5, 
+                size = 30
+            ),
+            axis.text.y = ggplot2::element_text(size = 8),
+            axis.title = ggplot2::element_text(size = 25)
+        )
+)
+
+plt <- ggpubr::ggarrange(
+    plotlist = plt, 
+    nrow = 1
+)
+
+ggplot2::ggsave(
+    file.path("figures", "study 1", "unsystematic error, significant tag-specific.png"),
+    plt, 
+    width = 2500, 
+    height = 1400, 
+    unit = "px"
+)
+
+# Perform the analysis again when outliers are removed
+results_lm <- lapply(
+    results,
+    function(x) {
+        dist <- x$distance_idealized
+
+        s_x <- sqrt(x$m_var_x)
+        s_y <- sqrt(x$m_var_y)
+
+        z_x <- (x$m_var_x - mean(x$m_var_x)) / sd(x$m_var_x)
+        z_y <- (x$m_var_y - mean(x$m_var_y)) / sd(x$m_var_y)
+        z_xy <- (x$m_cov_xy - mean(x$m_cov_xy)) / sd(x$m_cov_xy)
+        
+        idx <- z_x <= 3 & z_x >= -3
+        idy <- z_y <= 3 & z_y >= -3
+        idxy <- z_xy <= 3 & z_xy >= -3
 
         return(
-            ggpubr::ggarrange(
-                plotlist = plt,
-                ncol = 1
+            list(
+                "x" = lm(z_x[idx] ~ dist[idx]),
+                "y" = lm(z_y[idy] ~ dist[idy]),
+                "xy" = lm(z_xy[idxy] ~ dist[idxy])
             )
         )
     }
 )
+names(results_lm) <- names(results)
 
-ggplot2::ggsave(
-    file.path("figures", "study 1", "unsystematic error, per tag distance.png"), 
-    ggpubr::ggarrange(
-        plotlist = plots, 
-        nrow = 1
-    ), 
-    width = 6000, 
-    height = 5500, 
-    unit = "px"
+saveRDS(
+    results_lm,
+    file.path("results", "study 1", "unsystematic error, regressions per tag - no outliers.Rds")
 )
-
-# Interpretation of the results: 
-#   - If there was significance, it seemed to be mostly driven by outliers.
 
 
 
