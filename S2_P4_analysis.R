@@ -828,6 +828,32 @@ results %>%
     ) %>% 
     View()
 
+# Check mean values for the error for the Kalman filter specifically. Allows 
+# comparison with the results of Study 3
+results %>% 
+    dplyr::filter(type == "fixed") %>% 
+    dplyr::filter(stringr::str_detect(error, "T")) %>% 
+    dplyr::filter(preprocessing_function == "kalm") %>% 
+    dplyr::group_by(covariance) %>% 
+    dplyr::summarize( 
+        lb = mean(lb),
+        mean = mean(mean), 
+        ub = mean(ub)
+    ) %>% 
+    View()
+
+results %>% 
+    dplyr::filter(type == "movement") %>% 
+    dplyr::filter(stringr::str_detect(error, "T")) %>% 
+    dplyr::filter(preprocessing_function == "kalm") %>% 
+    dplyr::group_by(covariance) %>% 
+    dplyr::summarize( 
+        lb = mean(lb),
+        mean = mean(mean), 
+        ub = mean(ub)
+    ) %>% 
+    View()
+
 
 
 
